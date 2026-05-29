@@ -160,14 +160,18 @@ input,select,textarea{font-family:inherit;color:inherit;border:none;outline:none
 .quick-input::placeholder{color:rgba(255,255,255,.18);font-size:15px}
 .quick-clear{width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(255,255,255,.4)}
 
-/* Date picker row */
-.sheet-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
-.date-btn{padding:5px 14px;border-radius:var(--r-pill);font-size:12px;font-weight:500;color:rgba(255,255,255,.35);border:1px solid rgba(255,255,255,.07);transition:all .15s}
+/* Date + time picker */
+.sheet-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.date-btn{padding:5px 13px;border-radius:var(--r-pill);font-size:12px;font-weight:500;color:rgba(255,255,255,.35);border:1px solid rgba(255,255,255,.07);transition:all .15s;flex-shrink:0}
 .date-btn.active{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.12)}
-.date-custom-wrap{display:flex;align-items:center;gap:6px;flex:1;justify-content:flex-end}
-.date-custom-label{font-size:12px;color:rgba(255,255,255,.3)}
-.date-custom-input{font-size:12px;color:var(--accent);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:4px 8px;width:112px;text-align:center}
-.date-custom-input::-webkit-calendar-picker-indicator{filter:invert(.3);cursor:pointer}
+.date-time-row{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.date-custom-input{font-size:12px;color:var(--accent);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:5px 8px;flex:1;color-scheme:dark}
+.date-custom-input::-webkit-calendar-picker-indicator{filter:invert(.3) brightness(1.5);cursor:pointer;opacity:.7}
+.time-input{font-size:12px;color:var(--accent);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:5px 8px;width:88px;color-scheme:dark;flex-shrink:0}
+.time-input::-webkit-calendar-picker-indicator{filter:invert(.3) brightness(1.5);cursor:pointer;opacity:.7}
+.datetime-preview{font-size:11px;color:rgba(255,255,255,.3);padding:4px 0 6px;display:flex;align-items:center;gap:6px}
+.datetime-preview .dt-icon{font-size:12px}
+.datetime-preview .dt-text{color:rgba(255,255,255,.45);font-weight:500}
 
 /* Parse preview */
 .parse-preview{background:rgba(255,255,255,.04);border-radius:16px;padding:11px 15px;margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -292,14 +296,19 @@ input,select,textarea{font-family:inherit;color:inherit;border:none;outline:none
         autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
       <button class="quick-clear hidden" id="input-clear">✕</button>
     </div>
-    <!-- Date row: Today / Yesterday / Custom date picker -->
+    <!-- Date row: Today / Yesterday / Custom date + time -->
     <div class="sheet-row">
       <button class="date-btn active" data-date="today">Today</button>
       <button class="date-btn" data-date="yesterday">Yesterday</button>
-      <div class="date-custom-wrap">
-        <span class="date-custom-label">Date</span>
-        <input type="date" id="date-custom" class="date-custom-input">
-      </div>
+      <button class="date-btn" data-date="custom">Custom</button>
+    </div>
+    <div class="date-time-row" id="date-time-row" style="display:none">
+      <input type="date" id="date-custom" class="date-custom-input">
+      <input type="time" id="time-custom" class="time-input" value="12:00">
+    </div>
+    <div class="datetime-preview" id="datetime-preview">
+      <span class="dt-icon">📅</span>
+      <span class="dt-text" id="dt-text">Today, now</span>
     </div>
     <!-- Account selectors (from → to for transfer) -->
     <div class="sheet-selects">
@@ -412,14 +421,39 @@ const nanoid = (n=12) => { const c='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQR
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-// Date helpers
-const todayStr = () => new Date().toISOString().slice(0,10);
-const yesterdayStr = () => { const d=new Date(); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); };
+// ── Date + Time helpers ──────────────────────
+const todayStr = () => {
+  const d=new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
+const yesterdayStr = () => {
+  const d=new Date(); d.setDate(d.getDate()-1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
+const nowTimeStr = () => {
+  const d=new Date();
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+};
+// Parse "YYYY-MM-DD" safely in local time (no UTC shift)
+function parseDateLocal(s) {
+  const [y,m,d]=s.split('-').map(Number);
+  return new Date(y,m-1,d);
+}
 function friendlyDate(d) {
   if(d===todayStr()) return 'Today';
   if(d===yesterdayStr()) return 'Yesterday';
-  const dt = new Date(d+'T12:00:00Z');
-  return dt.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+  return parseDateLocal(d).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+}
+function friendlyDateTime(dateStr, timeStr) {
+  const isToday   = dateStr===todayStr();
+  const isYest    = dateStr===yesterdayStr();
+  const datePart  = isToday?'Today':isYest?'Yesterday':parseDateLocal(dateStr).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const [h,m]     = (timeStr||'').split(':').map(Number);
+  const hasTime   = !isNaN(h);
+  if(!hasTime) return datePart;
+  const ampm      = h>=12?'PM':'AM';
+  const hh        = h%12||12;
+  return `${datePart}, ${hh}:${String(m||0).padStart(2,'0')} ${ampm}`;
 }
 function buildMonths(n=6) {
   const now=new Date(), out=[];
@@ -724,7 +758,10 @@ const State = {
   activeTab:'home', activeMonth:new Date().toISOString().slice(0,7),
   filter:{type:null,search:''},
   categories:[], accounts:[], transactions:[],
-  sheetOpen:false, sheetDateMode:'today', sheetCustomDate:todayStr(),
+  sheetOpen:false,
+  sheetDateMode:'today',    // 'today' | 'yesterday' | 'custom'
+  sheetCustomDate:todayStr(),
+  sheetCustomTime:nowTimeStr(),
   parsedResult:null, catOverride:null, acctFromId:'wallet', acctToId:null,
 };
 
@@ -753,6 +790,12 @@ function renderTxRow(tx, showSync=false) {
   const amtColor=tx.type==='income'?'var(--income)':tx.type==='transfer'?'rgba(255,255,255,.4)':'rgba(255,255,255,.85)';
   const div=document.createElement('div'); div.className='tx-row'; div.dataset.id=tx.id;
   const acctHtml=acct?`<span class="tx-acct">${acct.icon||''} ${esc(acct.name)}${acctTo?` → ${acctTo.icon||''} ${esc(acctTo.name)}`:''}</span>`:'';
+  // Time display: stored in tx.time, or derived from createdAt
+  const txTime = tx.time || (tx.createdAt ? (() => {
+    const d=new Date(tx.createdAt);
+    const h=d.getHours(),m=d.getMinutes(),ap=h>=12?'PM':'AM';
+    return `${h%12||12}:${String(m).padStart(2,'0')} ${ap}`;
+  })() : '');
   div.innerHTML=`
     <div class="tx-icon" style="background:${cat.color}18">${cat.icon}</div>
     <div class="tx-info">
@@ -760,6 +803,7 @@ function renderTxRow(tx, showSync=false) {
       <div class="tx-meta">
         <span>${esc(cat.name)}</span>
         ${acctHtml}
+        ${txTime?`<span style="color:rgba(255,255,255,.2)">${txTime}</span>`:''}
         ${showSync?`<span class="sync-dot" style="background:${SYNC_COLOR[tx.syncStatus]||'#6C757D'}" title="${tx.syncStatus}"></span>`:''}
       </div>
     </div>
@@ -1210,9 +1254,18 @@ function hideModal(backdropId, modalId) {
 // QUICK ADD SHEET
 // ═══════════════════════════════════════════════════════════
 function getSheetDate() {
-  if(State.sheetDateMode==='today') return todayStr();
+  if(State.sheetDateMode==='today')     return todayStr();
   if(State.sheetDateMode==='yesterday') return yesterdayStr();
   return State.sheetCustomDate || todayStr();
+}
+function getSheetTime() {
+  if(State.sheetDateMode==='today')     return nowTimeStr();
+  if(State.sheetDateMode==='yesterday') return State.sheetCustomTime || '12:00';
+  return State.sheetCustomTime || '12:00';
+}
+function updateDateTimePreview() {
+  const dtText=$('dt-text'); if(!dtText) return;
+  dtText.textContent=friendlyDateTime(getSheetDate(), getSheetTime());
 }
 
 function populateAccountSelects() {
@@ -1258,6 +1311,7 @@ function updateChipHighlights() {
 function updateSheetPreview() {
   const raw=$('quick-input').value.trim();
   const dateStr=getSheetDate();
+  updateDateTimePreview();
   const result=raw?PARSER.parse(raw,State.categories,dateStr):null;
   if(result?.valid && State.catOverride) {
     const oc=State.categories.find(c=>c.id===State.catOverride);
@@ -1296,10 +1350,16 @@ function updateSheetPreview() {
 
 function openSheet() {
   State.sheetOpen=true; State.catOverride=null;
-  // Reset date to today
-  State.sheetDateMode='today'; State.sheetCustomDate=todayStr();
+  // Reset date/time to now
+  State.sheetDateMode='today';
+  State.sheetCustomDate=todayStr();
+  State.sheetCustomTime=nowTimeStr();
   document.querySelectorAll('.date-btn').forEach(b=>b.classList.toggle('active',b.dataset.date==='today'));
   $('date-custom').value=todayStr();
+  $('time-custom').value=nowTimeStr();
+  // Hide custom date-time row (only show for 'custom' mode)
+  const dtr=$('date-time-row');
+  if(dtr) dtr.style.display='none';
   const bd=$('sheet-backdrop'), sh=$('sheet');
   bd.style.display='flex';
   requestAnimationFrame(()=>{ bd.classList.add('visible'); sh.classList.add('show'); });
@@ -1319,15 +1379,22 @@ async function submitSheet() {
   const btn=$('submit-btn'); btn.className='submit-btn done'; btn.textContent='✓ Added!';
   const acctFrom=$('acct-from')?.value || 'wallet';
   const acctTo=r.type==='transfer'?($('acct-to')?.value||undefined):undefined;
+
+  // Build precise timestamp from chosen date + time
+  const dateStr=getSheetDate();
+  const timeStr=getSheetTime();
+  const [th,tm]=(timeStr||'00:00').split(':').map(Number);
+  const [dy,dm,dd]=dateStr.split('-').map(Number);
+  const txTimestamp=new Date(dy,dm-1,dd,th,tm,0).getTime();
+
   const tx={
     id:nanoid(), type:r.type, amount:r.amount, currency:'THB',
-    categoryId:r.categoryId, note:r.note, date:r.date,
+    categoryId:r.categoryId, note:r.note, date:dateStr, time:timeStr,
     accountFromId:acctFrom, accountToId:acctTo,
-    syncStatus:'local', createdAt:Date.now(), updatedAt:Date.now(),
+    syncStatus:'local', createdAt:txTimestamp, updatedAt:Date.now(),
   };
   await DB.addTransaction(tx); await DB.bumpCategory(r.categoryId);
   State.categories=await DB.getCategories();
-  // Refresh account balances
   State.accounts=await DB.getAccountBalances();
   navigator.vibrate?.([10]);
   showToast(`Added ${fmtCur(r.amount)}`);
@@ -1384,10 +1451,21 @@ function wireEvents() {
   // Date buttons
   document.querySelectorAll('.date-btn').forEach(btn=>{
     btn.addEventListener('click',()=>{
-      State.sheetDateMode=btn.dataset.date;
+      const mode=btn.dataset.date;
+      State.sheetDateMode=mode;
       document.querySelectorAll('.date-btn').forEach(b=>b.classList.toggle('active',b===btn));
-      // Sync custom input display
-      $('date-custom').value=getSheetDate();
+      const dtr=$('date-time-row');
+      if(mode==='custom'){
+        // Show date+time pickers
+        if(dtr) dtr.style.display='flex';
+        $('date-custom').value=State.sheetCustomDate||todayStr();
+        $('time-custom').value=State.sheetCustomTime||nowTimeStr();
+        setTimeout(()=>$('date-custom').focus(),50);
+      } else {
+        if(dtr) dtr.style.display='none';
+        // For yesterday, default time to noon; today stays as now
+        if(mode==='yesterday') State.sheetCustomTime='12:00';
+      }
       updateSheetPreview();
     });
   });
@@ -1395,8 +1473,12 @@ function wireEvents() {
   // Custom date picker
   $('date-custom').addEventListener('change',e=>{
     State.sheetCustomDate=e.target.value;
-    State.sheetDateMode='custom';
-    document.querySelectorAll('.date-btn').forEach(b=>b.classList.remove('active'));
+    updateSheetPreview();
+  });
+
+  // Custom time picker
+  $('time-custom').addEventListener('change',e=>{
+    State.sheetCustomTime=e.target.value;
     updateSheetPreview();
   });
 
@@ -1477,8 +1559,9 @@ async function boot() {
   State.accounts=await DB.getAccountBalances();
   // Default acctToId
   if(State.accounts.length>1) State.acctToId=State.accounts[1].id;
-  // Init custom date to today
+  // Init date/time inputs to now
   $('date-custom').value=todayStr();
+  $('time-custom').value=nowTimeStr();
   wireEvents();
   await loadAndRender();
   SyncQueue.refreshPending();

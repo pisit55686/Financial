@@ -46,10 +46,7 @@ input,select,textarea{font-family:inherit;color:inherit;border:none;outline:none
 .fab:active{transform:scale(.93)}
 .fab svg{pointer-events:none}
 
-/* Month bar */
-.month-bar{display:flex;gap:4px;overflow-x:auto;padding:0 20px 12px;flex-shrink:0}
-.month-pill{flex-shrink:0;padding:6px 16px;border-radius:var(--r-pill);font-size:13px;font-weight:500;transition:all .15s;color:rgba(255,255,255,.35);background:transparent}
-.month-pill.active{background:rgba(255,255,255,.12);color:#fff}
+/* Month selector — replaced by calendar */
 
 /* Home */
 .balance-hero{padding:20px 24px 16px;flex-shrink:0}
@@ -250,21 +247,88 @@ input,select,textarea{font-family:inherit;color:inherit;border:none;outline:none
 .settings-value{font-size:13px;color:rgba(255,255,255,.25)}
 .settings-section-label{font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,.25);padding:16px 20px 6px}
 
-/* Account balance chips */
-.acct-chips{display:flex;gap:8px;overflow-x:auto;padding:0 20px 14px;flex-shrink:0}
-.acct-chip{flex-shrink:0;padding:8px 14px;border-radius:14px;background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;gap:2px;cursor:pointer;transition:all .15s;min-width:100px}
-.acct-chip.selected{border-color:rgba(232,213,183,.35);background:rgba(232,213,183,.07)}
-.acct-chip-name{font-size:11px;color:rgba(255,255,255,.4);display:flex;align-items:center;gap:5px}
-.acct-chip-bal{font-size:16px;font-weight:700;color:#fff}
+/* ── Calendar ─────────────────────────────────────────────── */
+.cal-wrap{flex-shrink:0;padding:0 16px 8px;user-select:none;-webkit-user-select:none}
+.cal-header-row{display:flex;align-items:center;justify-content:space-between;padding:4px 0 10px}
+.cal-title{font-size:16px;font-weight:700;color:#fff}
+.cal-nav-btn{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:16px;color:rgba(255,255,255,.6);flex-shrink:0}
+.cal-nav-btn:active{background:rgba(255,255,255,.12)}
+.cal-day-names{display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:2px}
+.cal-day-name{text-align:center;font-size:10px;font-weight:600;color:rgba(255,255,255,.25);padding:2px 0;text-transform:uppercase}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cal-cell{aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;position:relative;transition:background .1s}
+.cal-cell:active{background:rgba(255,255,255,.1)}
+.cal-cell.other-month .cal-num{opacity:.2}
+.cal-cell.today .cal-num{color:var(--accent);font-weight:700}
+.cal-cell.today::before{content:'';position:absolute;inset:2px;border-radius:6px;border:1px solid rgba(232,213,183,.35)}
+.cal-cell.selected{background:rgba(232,213,183,.15)}
+.cal-cell.in-range{background:rgba(232,213,183,.07)}
+.cal-cell.range-start,.cal-cell.range-end{background:rgba(232,213,183,.22)}
+.cal-cell.has-tx .cal-dot{display:block}
+.cal-num{font-size:13px;font-weight:500;color:rgba(255,255,255,.75);line-height:1}
+.cal-dot{display:none;width:4px;height:4px;border-radius:50%;background:var(--expense)}
+.cal-dot.income{background:var(--income)}
+.cal-dot.mixed{background:var(--accent)}
+/* range summary strip */
+.cal-range-bar{background:var(--surface);border-radius:var(--r-card);border:1px solid var(--border);padding:12px 16px;margin:8px 16px 0;flex-shrink:0}
+.cal-range-title{font-size:11px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:rgba(255,255,255,.3);margin-bottom:8px}
+.cal-range-stats{display:flex;gap:0;justify-content:space-between}
+.cal-stat{text-align:center;flex:1}
+.cal-stat-label{font-size:10px;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+.cal-stat-val{font-size:15px;font-weight:700}
+/* Edit transaction modal */
+.edit-modal-bd{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-end;opacity:0;transition:opacity .2s;pointer-events:none}
+.edit-modal-bd.show{opacity:1;pointer-events:auto}
+.edit-modal{background:#1C1C22;border-radius:28px 28px 0 0;border:1px solid rgba(255,255,255,.08);padding:0 20px max(32px,env(safe-area-inset-bottom));width:100%;transform:translateY(100%);transition:transform .3s cubic-bezier(.32,.72,0,1);max-height:88dvh;overflow-y:auto}
+.edit-modal.show{transform:translateY(0)}
+.edit-section{margin-bottom:14px}
+.edit-label{font-size:11px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:rgba(255,255,255,.3);margin-bottom:6px;display:block}
+.edit-input{width:100%;padding:11px 14px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);color:#fff;font-size:15px;transition:border-color .2s}
+.edit-input:focus{border-color:rgba(232,213,183,.3)}
+.edit-type-row{display:flex;gap:6px}
+.edit-type-btn{flex:1;padding:9px 6px;border-radius:12px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.35);transition:all .15s;text-align:center}
+.edit-type-btn.sel-expense{background:rgba(255,107,107,.15);border-color:rgba(255,107,107,.3);color:var(--expense)}
+.edit-type-btn.sel-income{background:rgba(149,225,211,.15);border-color:rgba(149,225,211,.3);color:var(--income)}
+.edit-type-btn.sel-transfer{background:rgba(148,163,184,.15);border-color:rgba(148,163,184,.3);color:rgba(148,163,184,.9)}
+.edit-cat-chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}
+.edit-cat-chip{flex-shrink:0;display:flex;align-items:center;gap:4px;padding:6px 11px;border-radius:var(--r-pill);font-size:12px;font-weight:500;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.05);color:rgba(255,255,255,.45);transition:all .15s;cursor:pointer}
+.edit-cat-chip.active{color:#fff}
+.edit-actions{display:flex;gap:8px;padding-top:4px}
+.edit-save-btn{flex:1;padding:14px;border-radius:16px;font-size:15px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1209;border:none;cursor:pointer}
+.edit-cancel-btn{padding:14px 18px;border-radius:16px;font-size:15px;font-weight:600;background:rgba(255,255,255,.07);color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.08);cursor:pointer}
+.edit-delete-btn{padding:14px 16px;border-radius:16px;font-size:15px;font-weight:600;background:rgba(255,107,107,.1);color:var(--expense);border:1px solid rgba(255,107,107,.2);cursor:pointer}
 </style>
 </head>
 <body>
 <div id="app">
   <div class="screen" id="screen-home"></div>
   <div class="screen hidden" id="screen-history"></div>
+  <div class="screen hidden" id="screen-calendar"></div>
   <div class="screen hidden" id="screen-summary"></div>
   <div class="screen hidden" id="screen-settings"></div>
   <nav id="bottom-nav">
+    <button class="nav-btn active" data-tab="home">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" id="nav-icon-home"><path d="M3 9.5L12 3L21 9.5V20C21 20.55 20.55 21 20 21H15V15H9V21H4C3.45 21 3 20.55 3 20V9.5Z" fill="#E8D5B7" stroke="#E8D5B7" stroke-width="1.5"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="nav-btn" data-tab="history">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="15" rx="2" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/><path d="M7 9H17M7 13H13" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" stroke-linecap="round"/><path d="M7 3V7M17 3V7" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span>History</span>
+    </button>
+    <button class="nav-btn" data-tab="calendar">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/><path d="M3 9H21M8 2V6M16 2V6" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span>Calendar</span>
+    </button>
+    <button class="nav-btn" data-tab="summary">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 20V14M9 20V8M14 20V12M19 20V4" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span>Summary</span>
+    </button>
+    <button class="nav-btn" data-tab="settings">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/><path d="M12 2V4M12 20V22M4.22 4.22L5.64 5.64M18.36 18.36L19.78 19.78M2 12H4M20 12H22M4.22 19.78L5.64 18.36M18.36 5.64L19.78 4.22" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+</div>
     <button class="nav-btn active" data-tab="home">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M3 9.5L12 3L21 9.5V20C21 20.55 20.55 21 20 21H15V15H9V21H4C3.45 21 3 20.55 3 20V9.5Z" fill="#E8D5B7" stroke="#E8D5B7" stroke-width="1.5"/></svg>
       <span>Home</span>
@@ -310,14 +374,14 @@ input,select,textarea{font-family:inherit;color:inherit;border:none;outline:none
       <span class="dt-icon">📅</span>
       <span class="dt-text" id="dt-text">Today, now</span>
     </div>
-    <!-- Account selectors (from → to for transfer) -->
+    <!-- Account selectors — always visible -->
     <div class="sheet-selects">
-      <div class="sheet-select-wrap">
-        <span class="sheet-select-lbl">From</span>
+      <div class="sheet-select-wrap" id="acct-from-wrap">
+        <span class="sheet-select-lbl" id="acct-from-lbl">Account</span>
         <select id="acct-from" class="sheet-select"></select>
       </div>
-      <div class="sheet-select-wrap" id="acct-to-wrap">
-        <span class="sheet-select-lbl">To</span>
+      <div class="sheet-select-wrap" id="acct-to-wrap" style="display:none">
+        <span class="sheet-select-lbl">Transfer To</span>
         <select id="acct-to" class="sheet-select"></select>
       </div>
     </div>
@@ -406,6 +470,64 @@ input,select,textarea{font-family:inherit;color:inherit;border:none;outline:none
   </div>
 </div>
 
+<!-- Edit Transaction Modal -->
+<div class="edit-modal-bd" id="edit-modal-bd">
+  <div class="edit-modal" id="edit-modal">
+    <div class="sheet-handle"><div class="sheet-handle-bar"></div></div>
+    <p style="font-size:17px;font-weight:700;text-align:center;margin-bottom:18px" id="edit-modal-title">Edit Transaction</p>
+
+    <div class="edit-section">
+      <label class="edit-label">Type</label>
+      <div class="edit-type-row">
+        <button class="edit-type-btn" data-etype="expense">– Expense</button>
+        <button class="edit-type-btn" data-etype="income">+ Income</button>
+        <button class="edit-type-btn" data-etype="transfer">→ Transfer</button>
+      </div>
+    </div>
+
+    <div class="edit-section">
+      <label class="edit-label">Amount (฿)</label>
+      <input class="edit-input" id="edit-amount" type="number" inputmode="decimal" placeholder="0" min="0" step="any">
+    </div>
+
+    <div class="edit-section">
+      <label class="edit-label">Note</label>
+      <input class="edit-input" id="edit-note" type="text" placeholder="Description…" autocomplete="off" autocorrect="off" autocapitalize="none">
+    </div>
+
+    <div class="edit-section">
+      <label class="edit-label">Category</label>
+      <div class="edit-cat-chips" id="edit-cat-chips"></div>
+    </div>
+
+    <div class="edit-section" id="edit-acct-section">
+      <label class="edit-label">Account</label>
+      <select class="edit-input" id="edit-acct-from" style="appearance:none;-webkit-appearance:none;background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6' fill='none' stroke='rgba(255,255,255,.3)' stroke-width='1.5'/%3E%3C/svg%3E\");background-repeat:no-repeat;background-position:right 12px center;background-color:rgba(255,255,255,.06);color-scheme:dark"></select>
+    </div>
+
+    <div class="edit-section hidden" id="edit-acct-to-section">
+      <label class="edit-label">Transfer To</label>
+      <select class="edit-input" id="edit-acct-to" style="appearance:none;-webkit-appearance:none;background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6' fill='none' stroke='rgba(255,255,255,.3)' stroke-width='1.5'/%3E%3C/svg%3E\");background-repeat:no-repeat;background-position:right 12px center;background-color:rgba(255,255,255,.06);color-scheme:dark"></select>
+    </div>
+
+    <div class="edit-section">
+      <label class="edit-label">Date</label>
+      <input class="edit-input" id="edit-date" type="date" style="color-scheme:dark">
+    </div>
+
+    <div class="edit-section">
+      <label class="edit-label">Time</label>
+      <input class="edit-input" id="edit-time" type="time" style="color-scheme:dark">
+    </div>
+
+    <div class="edit-actions">
+      <button class="edit-delete-btn" id="edit-delete-btn">Delete</button>
+      <button class="edit-cancel-btn" id="edit-cancel-btn">Cancel</button>
+      <button class="edit-save-btn" id="edit-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast-stack"></div>
 
 <script>
@@ -466,6 +588,11 @@ function buildMonths(n=6) {
 function formatMonth(ym) {
   const [y,m]=ym.split('-').map(Number);
   return new Date(y,m-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
+}
+function shiftMonth(ym, delta) {
+  const [y,m]=ym.split('-').map(Number);
+  const d=new Date(y,m-1+delta,1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
 
 const TYPE_SIGN  = {income:'+',expense:'–',transfer:'→'};
@@ -564,6 +691,15 @@ const DB = (() => {
     t.objectStore('transactions').add(data);
     return new Promise((res,rej)=>{t.oncomplete=()=>res(data);t.onerror=()=>rej(t.error);});
   }
+  async function updateTransaction(id, patch) {
+    const st=_db.transaction('transactions','readwrite').objectStore('transactions');
+    const cur=await req2p(st.get(id));
+    if(!cur) throw new Error('Not found');
+    return req2p(st.put({...cur,...patch,syncStatus:'local',updatedAt:Date.now()}));
+  }
+  async function getTransaction(id) {
+    return req2p(_db.transaction('transactions').objectStore('transactions').get(id));
+  }
   async function deleteTransaction(id) {
     return req2p(_db.transaction('transactions','readwrite').objectStore('transactions').delete(id));
   }
@@ -633,7 +769,7 @@ const DB = (() => {
   }
   async function writeSyncLog(entry) { return req2p(_db.transaction('syncLog','readwrite').objectStore('syncLog').add(entry)); }
 
-  return {open,seed,getTransactions,addTransaction,deleteTransaction,markSyncStatus,
+  return {open,seed,getTransactions,getTransaction,addTransaction,updateTransaction,deleteTransaction,markSyncStatus,
           resetFailedToLocal,getUnsyncedTransactions,countUnsynced,getMonthlyStats,
           bumpCategory,getCategories,saveCategory,deleteCategory,
           getAccounts,saveAccount,deleteAccount,getAccountBalances,
@@ -763,6 +899,7 @@ const State = {
   sheetCustomDate:todayStr(),
   sheetCustomTime:nowTimeStr(),
   parsedResult:null, catOverride:null, acctFromId:'wallet', acctToId:null,
+  cal:{ year:new Date().getFullYear(), month:new Date().getMonth(), rangeStart:null, rangeEnd:null, dragging:false },
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -790,7 +927,7 @@ function renderTxRow(tx, showSync=false) {
   const amtColor=tx.type==='income'?'var(--income)':tx.type==='transfer'?'rgba(255,255,255,.4)':'rgba(255,255,255,.85)';
   const div=document.createElement('div'); div.className='tx-row'; div.dataset.id=tx.id;
   const acctHtml=acct?`<span class="tx-acct">${acct.icon||''} ${esc(acct.name)}${acctTo?` → ${acctTo.icon||''} ${esc(acctTo.name)}`:''}</span>`:'';
-  // Time display: stored in tx.time, or derived from createdAt
+  // Time display
   const txTime = tx.time || (tx.createdAt ? (() => {
     const d=new Date(tx.createdAt);
     const h=d.getHours(),m=d.getMinutes(),ap=h>=12?'PM':'AM';
@@ -808,11 +945,20 @@ function renderTxRow(tx, showSync=false) {
       </div>
     </div>
     <span class="tx-amount ${tx.type}" style="color:${amtColor}">${TYPE_SIGN[tx.type]}${fmtCur(tx.amount)}</span>
-    <button class="tx-del" data-del="${tx.id}">✕</button>`;
+    <button class="tx-del" data-del="${tx.id}" title="Delete">✕</button>`;
+
+  // Tap anywhere on the row (except delete btn) → open edit
+  div.addEventListener('click', e => {
+    if(e.target.closest('[data-del]')) return;
+    openEditModal(tx);
+  });
+  div.style.cursor='pointer';
+
+  // Two-tap delete
   const delBtn=div.querySelector('[data-del]');
   let armed=false, armTimer=null;
   delBtn.addEventListener('click', async e=>{ e.stopPropagation();
-    if(!armed){ armed=true; delBtn.classList.add('armed'); delBtn.textContent='Delete?';
+    if(!armed){ armed=true; delBtn.classList.add('armed'); delBtn.textContent='Del?';
       armTimer=setTimeout(()=>{ armed=false; delBtn.classList.remove('armed'); delBtn.textContent='✕'; },2500);
     } else {
       clearTimeout(armTimer); div.style.opacity='.4';
@@ -837,16 +983,126 @@ function renderTxGroups(groups, container, showSync=false) {
   });
 }
 
-function renderMonthBar(containerId) {
-  const el=document.getElementById(containerId); if(!el) return;
-  el.innerHTML='';
-  buildMonths(6).forEach(m=>{
-    const btn=document.createElement('button');
-    btn.className='month-pill'+(m.value===State.activeMonth?' active':'');
-    btn.textContent=m.label;
-    btn.addEventListener('click',()=>{ State.activeMonth=m.value; loadAndRender(); });
-    el.appendChild(btn);
-  });
+// ═══════════════════════════════════════════════════════════
+// CALENDAR SCREEN
+// ═══════════════════════════════════════════════════════════
+async function renderCalendar() {
+  const el=$('screen-calendar'); if(!el) return;
+  const {year,month,rangeStart,rangeEnd}=State.cal;
+  const firstDow=new Date(year,month,1).getDay();
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const prevDays=new Date(year,month,0).getDate();
+  const monthStr=`${year}-${String(month+1).padStart(2,'0')}`;
+  const monthName=new Date(year,month,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
+
+  // Load all transactions for this month to mark days
+  const allTxs=await DB.getTransactions({month:monthStr});
+  const txByDate={};
+  allTxs.forEach(t=>{ if(!txByDate[t.date]) txByDate[t.date]={exp:0,inc:0,txs:[]}; const r=txByDate[t.date]; if(t.type==='expense') r.exp+=t.amount; else if(t.type==='income') r.inc+=t.amount; r.txs.push(t); });
+
+  // Range stats
+  let rangeStats=null;
+  if(rangeStart && rangeEnd) {
+    const s=rangeStart<=rangeEnd?rangeStart:rangeEnd;
+    const e2=rangeStart<=rangeEnd?rangeEnd:rangeStart;
+    let inc=0,exp=0,count=0;
+    allTxs.forEach(t=>{ if(t.date>=s&&t.date<=e2){ if(t.type==='income')inc+=t.amount; else if(t.type==='expense')exp+=t.amount; count++; } });
+    rangeStats={start:s,end:e2,inc,exp,net:inc-exp,count};
+  } else if(rangeStart) {
+    const d=txByDate[rangeStart]||{exp:0,inc:0,txs:[]};
+    rangeStats={start:rangeStart,end:rangeStart,inc:d.inc,exp:d.exp,net:d.inc-d.exp,count:d.txs.length};
+  }
+
+  el.innerHTML=`
+    <div class="cal-wrap">
+      <div class="cal-header-row">
+        <button class="cal-nav-btn" id="cal-prev">‹</button>
+        <span class="cal-title">${monthName}</span>
+        <button class="cal-nav-btn" id="cal-next">›</button>
+      </div>
+      <div class="cal-day-names">
+        ${['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=>`<div class="cal-day-name">${d}</div>`).join('')}
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+    </div>
+    ${rangeStats?`
+    <div class="cal-range-bar">
+      <div class="cal-range-title">${rangeStats.start===rangeStats.end?friendlyDate(rangeStats.start):`${friendlyDate(rangeStats.start)} – ${friendlyDate(rangeStats.end)}`} · ${rangeStats.count} tx</div>
+      <div class="cal-range-stats">
+        <div class="cal-stat"><div class="cal-stat-label">Income</div><div class="cal-stat-val" style="color:var(--income)">+${fmtCur(rangeStats.inc)}</div></div>
+        <div class="cal-stat"><div class="cal-stat-label">Expense</div><div class="cal-stat-val" style="color:var(--expense)">–${fmtCur(rangeStats.exp)}</div></div>
+        <div class="cal-stat"><div class="cal-stat-label">Net</div><div class="cal-stat-val" style="color:${rangeStats.net>=0?'var(--income)':'var(--expense)'}">${rangeStats.net>=0?'+':''}${fmtCur(Math.abs(rangeStats.net))}</div></div>
+      </div>
+    </div>`:''}
+    <div class="scroll" id="cal-tx-list" style="padding:8px 16px 8px"></div>
+    <div class="footer-bar end"><button class="fab" id="cal-fab"><svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M11 4V18M4 11H18" stroke="#1a1209" stroke-width="2.5" stroke-linecap="round"/></svg></button></div>`;
+
+  // Build grid
+  const grid=$('cal-grid');
+  const today=todayStr();
+
+  // Prev-month padding cells
+  for(let i=0;i<firstDow;i++){
+    const cell=document.createElement('div'); cell.className='cal-cell other-month';
+    const d=prevDays-firstDow+1+i;
+    cell.innerHTML=`<span class="cal-num">${d}</span>`;
+    grid.appendChild(cell);
+  }
+
+  // Days in month
+  for(let d=1;d<=daysInMonth;d++){
+    const ds=`${monthStr}-${String(d).padStart(2,'0')}`;
+    const info=txByDate[ds];
+    const cell=document.createElement('div'); cell.className='cal-cell';
+    if(ds===today) cell.classList.add('today');
+
+    // Range classes
+    const rs=rangeStart&&rangeEnd?(rangeStart<=rangeEnd?rangeStart:rangeEnd):rangeStart;
+    const re=rangeStart&&rangeEnd?(rangeStart<=rangeEnd?rangeEnd:rangeStart):rangeStart;
+    if(rs&&re&&ds>=rs&&ds<=re) cell.classList.add('in-range');
+    if(ds===rs||ds===re) cell.classList.add(ds===rs?'range-start':'range-end');
+    if(ds===rangeStart&&!rangeEnd) cell.classList.add('range-start');
+
+    let dotClass='';
+    if(info){ cell.classList.add('has-tx'); dotClass=info.inc>0&&info.exp>0?'mixed':info.inc>0?'income':''; }
+
+    cell.innerHTML=`<span class="cal-num">${d}</span>${info?`<span class="cal-dot ${dotClass}"></span>`:''}`;
+    cell.dataset.date=ds;
+    grid.appendChild(cell);
+  }
+
+  // Next-month padding
+  const totalCells=firstDow+daysInMonth;
+  const rem=(7-totalCells%7)%7;
+  for(let i=1;i<=rem;i++){
+    const cell=document.createElement('div'); cell.className='cal-cell other-month';
+    cell.innerHTML=`<span class="cal-num">${i}</span>`;
+    grid.appendChild(cell);
+  }
+
+  // Show transactions for selected date(s)
+  const txList=$('cal-tx-list');
+  if(rangeStats && rangeStats.count>0){
+    const txsInRange=allTxs.filter(t=>t.date>=rangeStats.start&&t.date<=rangeStats.end).sort((a,b)=>b.createdAt-a.createdAt);
+    const groups=groupByDate(txsInRange);
+    renderTxGroups(groups,txList,false);
+  }
+
+  // Nav
+  $('cal-prev').addEventListener('click',()=>{ let {year,month}=State.cal; month--; if(month<0){month=11;year--;} State.cal.year=year;State.cal.month=month;State.cal.rangeStart=null;State.cal.rangeEnd=null; renderCalendar(); });
+  $('cal-next').addEventListener('click',()=>{ let {year,month}=State.cal; month++; if(month>11){month=0;year++;} State.cal.year=year;State.cal.month=month;State.cal.rangeStart=null;State.cal.rangeEnd=null; renderCalendar(); });
+  $('cal-fab').addEventListener('click',openSheet);
+
+  // Drag-to-select on grid — mouse + touch
+  function dateFromCell(el){ return el?.closest('[data-date]')?.dataset?.date||null; }
+
+  grid.addEventListener('mousedown', e=>{ const d=dateFromCell(e.target); if(!d)return; State.cal.dragging=true; State.cal.rangeStart=d; State.cal.rangeEnd=null; renderCalendar(); });
+  grid.addEventListener('mousemove', e=>{ if(!State.cal.dragging)return; const d=dateFromCell(e.target); if(d&&d!==State.cal.rangeEnd){State.cal.rangeEnd=d; renderCalendar();} });
+  window.addEventListener('mouseup', ()=>{ if(State.cal.dragging){State.cal.dragging=false; renderCalendar();} },{once:true});
+
+  grid.addEventListener('touchstart', e=>{ const t=e.touches[0]; const d=dateFromCell(document.elementFromPoint(t.clientX,t.clientY)); if(!d)return; State.cal.dragging=true; State.cal.rangeStart=d; State.cal.rangeEnd=null; renderCalendar(); },{passive:true});
+  grid.addEventListener('touchmove', e=>{ if(!State.cal.dragging)return; const t=e.touches[0]; const d=dateFromCell(document.elementFromPoint(t.clientX,t.clientY)); if(d&&d!==State.cal.rangeEnd){State.cal.rangeEnd=d; renderCalendar();} },{passive:true});
+  grid.addEventListener('touchend', ()=>{ State.cal.dragging=false; renderCalendar(); },{passive:true});
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -859,11 +1115,16 @@ function renderHome() {
   const net=income-expense;
   el.innerHTML=`
     <div class="balance-hero">
-      <div class="balance-label">${formatMonth(State.activeMonth)}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div class="balance-label">${formatMonth(State.activeMonth)}</div>
+        <div style="display:flex;gap:6px">
+          <button id="month-prev" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);font-size:14px;color:rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center">‹</button>
+          <button id="month-next" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);font-size:14px;color:rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center">›</button>
+        </div>
+      </div>
       <div class="balance-amount"><span class="currency">฿</span><span class="value ${net<0?'neg':''}">${fmtCmpct(Math.abs(net))}</span></div>
       <div class="balance-pills"><span class="inc">+${fmtCur(income)}</span><span class="sep">·</span><span class="exp">–${fmtCur(expense)}</span></div>
     </div>
-    <div class="month-bar" id="home-month-bar"></div>
     <div class="acct-chips" id="home-acct-chips"></div>
     <div class="scroll" id="home-feed"></div>
     <div class="footer-bar">
@@ -873,8 +1134,10 @@ function renderHome() {
       </div>
       <button class="fab" id="home-fab"><svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M11 4V18M4 11H18" stroke="#1a1209" stroke-width="2.5" stroke-linecap="round"/></svg></button>
     </div>`;
-  renderMonthBar('home-month-bar');
-  // Account balance chips
+  // Month nav
+  $('month-prev').addEventListener('click',()=>{ State.activeMonth=shiftMonth(State.activeMonth,-1); loadAndRender(); });
+  $('month-next').addEventListener('click',()=>{ State.activeMonth=shiftMonth(State.activeMonth,+1); loadAndRender(); });
+  // Account chips
   const achip=$('home-acct-chips');
   State.accounts.forEach(a=>{
     const btn=document.createElement('button'); btn.className='acct-chip';
@@ -888,8 +1151,16 @@ function renderHome() {
 function renderHistory() {
   const el=$('screen-history');
   el.innerHTML=`
-    <div style="padding:20px 20px 8px;flex-shrink:0"><div class="screen-title">History</div></div>
-    <div class="month-bar" id="hist-month-bar"></div>
+    <div style="padding:20px 20px 8px;flex-shrink:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="screen-title" style="margin-bottom:0">History</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button id="hist-month-prev" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);font-size:14px;color:rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center">‹</button>
+          <span style="font-size:13px;color:rgba(255,255,255,.45);font-weight:500;min-width:70px;text-align:center">${formatMonth(State.activeMonth)}</span>
+          <button id="hist-month-next" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);font-size:14px;color:rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center">›</button>
+        </div>
+      </div>
+    </div>
     <div class="type-filter" id="type-filter"></div>
     <div class="search-bar">
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none" style="flex-shrink:0"><circle cx="6.5" cy="6.5" r="5" stroke="rgba(255,255,255,.25)" stroke-width="1.5"/><path d="M10.5 10.5L13.5 13.5" stroke="rgba(255,255,255,.25)" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -898,7 +1169,8 @@ function renderHistory() {
     </div>
     <div class="scroll" id="hist-list"></div>
     <div class="footer-bar end"><button class="fab" id="hist-fab"><svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M11 4V18M4 11H18" stroke="#1a1209" stroke-width="2.5" stroke-linecap="round"/></svg></button></div>`;
-  renderMonthBar('hist-month-bar');
+  $('hist-month-prev').addEventListener('click',()=>{ State.activeMonth=shiftMonth(State.activeMonth,-1); loadAndRender(); });
+  $('hist-month-next').addEventListener('click',()=>{ State.activeMonth=shiftMonth(State.activeMonth,+1); loadAndRender(); });
   const tf=$('type-filter');
   [{label:'All',val:null},{label:'Expense',val:'expense'},{label:'Income',val:'income'},{label:'Transfer',val:'transfer'}].forEach(({label,val})=>{
     const btn=document.createElement('button'); btn.className='type-pill'+(State.filter.type===val?' active':''); btn.textContent=label;
@@ -927,8 +1199,16 @@ async function renderSummary() {
       <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${c.pct}%;background:${c.color}"></div></div>
     </div>`).join(''):'<p style="color:rgba(255,255,255,.2);font-size:13px">No expenses this month</p>';
   el.innerHTML=`
-    <div style="padding:20px 20px 8px;flex-shrink:0"><div class="screen-title">Summary</div></div>
-    <div class="month-bar" id="sum-month-bar"></div>
+    <div style="padding:20px 20px 8px;flex-shrink:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0">
+        <div class="screen-title" style="margin-bottom:0">Summary</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button id="sum-month-prev" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);font-size:14px;color:rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center">‹</button>
+          <span style="font-size:13px;color:rgba(255,255,255,.45);font-weight:500;min-width:70px;text-align:center">${formatMonth(State.activeMonth)}</span>
+          <button id="sum-month-next" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);font-size:14px;color:rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center">›</button>
+        </div>
+      </div>
+    </div>
     <div class="scroll" id="sum-scroll">
       <div class="card net-card">
         <div class="net-label">${formatMonth(State.activeMonth)}</div>
@@ -964,7 +1244,8 @@ async function renderSummary() {
       </div>
       <div style="height:16px"></div>
     </div>`;
-  renderMonthBar('sum-month-bar');
+  $('sum-month-prev').addEventListener('click',()=>{ State.activeMonth=shiftMonth(State.activeMonth,-1); renderSummary(); });
+  $('sum-month-next').addEventListener('click',()=>{ State.activeMonth=shiftMonth(State.activeMonth,+1); renderSummary(); });
   initSyncUI();
 }
 
@@ -1251,8 +1532,170 @@ function hideModal(backdropId, modalId) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// QUICK ADD SHEET
+// EDIT TRANSACTION MODAL
 // ═══════════════════════════════════════════════════════════
+let _editTx = null;   // the transaction currently being edited
+let _editType = 'expense';
+let _editCatId = null;
+
+function openEditModal(tx) {
+  _editTx = tx;
+  _editType = tx.type;
+  _editCatId = tx.categoryId;
+
+  // Populate type buttons
+  _updateEditTypeButtons();
+
+  // Amount — show plain number
+  $('edit-amount').value = tx.amount;
+
+  // Note
+  $('edit-note').value = tx.note || '';
+
+  // Date
+  $('edit-date').value = tx.date;
+
+  // Time — derive from tx.time or createdAt
+  if(tx.time) {
+    $('edit-time').value = tx.time;
+  } else if(tx.createdAt) {
+    const d=new Date(tx.createdAt);
+    $('edit-time').value = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  } else {
+    $('edit-time').value = '12:00';
+  }
+
+  // Account selects
+  _populateEditAccounts(tx);
+
+  // Transfer to-account visibility
+  $('edit-acct-to-section').classList.toggle('hidden', tx.type !== 'transfer');
+
+  // Category chips
+  _buildEditCatChips();
+
+  // Show modal
+  const bd=$('edit-modal-bd'), m=$('edit-modal');
+  bd.classList.add('show');
+  requestAnimationFrame(()=>m.classList.add('show'));
+}
+
+function closeEditModal() {
+  const bd=$('edit-modal-bd'), m=$('edit-modal');
+  m.classList.remove('show');
+  setTimeout(()=>bd.classList.remove('show'), 300);
+  _editTx = null;
+}
+
+function _updateEditTypeButtons() {
+  document.querySelectorAll('.edit-type-btn').forEach(btn=>{
+    btn.className = 'edit-type-btn';
+    if(btn.dataset.etype === _editType) btn.classList.add(`sel-${_editType}`);
+  });
+  $('edit-acct-to-section')?.classList.toggle('hidden', _editType !== 'transfer');
+  _buildEditCatChips();
+}
+
+function _populateEditAccounts(tx) {
+  [$('edit-acct-from'), $('edit-acct-to')].forEach((sel, idx) => {
+    if(!sel) return;
+    sel.innerHTML = '';
+    State.accounts.forEach(a => {
+      const opt=document.createElement('option'); opt.value=a.id;
+      opt.textContent=`${a.icon||''} ${a.name}`;
+      if(idx===0 && a.id===tx.accountFromId) opt.selected=true;
+      if(idx===1 && a.id===(tx.accountToId||'')) opt.selected=true;
+      sel.appendChild(opt);
+    });
+  });
+}
+
+function _buildEditCatChips() {
+  const wrap=$('edit-cat-chips'); if(!wrap) return;
+  wrap.innerHTML='';
+  const pool = State.categories.filter(c => c.type===_editType || c.type==='both');
+  pool.forEach(cat => {
+    const btn=document.createElement('button'); btn.className='edit-cat-chip';
+    btn.dataset.catId=cat.id;
+    btn.innerHTML=`<span>${cat.icon}</span><span>${esc(cat.name)}</span>`;
+    const active = cat.id === _editCatId;
+    if(active) {
+      btn.classList.add('active');
+      btn.style.background=`${cat.color}22`;
+      btn.style.borderColor=`${cat.color}55`;
+      btn.style.color=cat.color;
+    }
+    btn.addEventListener('click', () => {
+      _editCatId = cat.id;
+      _buildEditCatChips(); // re-render highlights
+    });
+    wrap.appendChild(btn);
+  });
+}
+
+async function saveEdit() {
+  if(!_editTx) return;
+  const amount = parseFloat($('edit-amount').value);
+  if(isNaN(amount) || amount <= 0) { showToast('Enter a valid amount','error'); return; }
+  const note = $('edit-note').value.trim();
+  const date = $('edit-date').value;
+  const time = $('edit-time').value;
+  if(!date) { showToast('Choose a date','error'); return; }
+
+  // Build precise timestamp
+  const [dy,dm,dd]=date.split('-').map(Number);
+  const [th,tm]=(time||'12:00').split(':').map(Number);
+  const ts=new Date(dy,dm-1,dd,th,tm,0).getTime();
+
+  const acctFrom=$('edit-acct-from')?.value || _editTx.accountFromId;
+  const acctTo=_editType==='transfer'?($('edit-acct-to')?.value||undefined):undefined;
+
+  await DB.updateTransaction(_editTx.id, {
+    type:_editType, amount, note, date, time,
+    categoryId:_editCatId||_editTx.categoryId,
+    accountFromId:acctFrom, accountToId:acctTo,
+    createdAt:ts,
+  });
+
+  navigator.vibrate?.([10]);
+  showToast('Updated');
+  closeEditModal();
+  await loadAndRender();
+}
+
+function wireEditModal() {
+  // Type buttons
+  document.querySelectorAll('.edit-type-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      _editType = btn.dataset.etype;
+      _updateEditTypeButtons();
+    });
+  });
+
+  // Save
+  $('edit-save-btn').addEventListener('click', saveEdit);
+
+  // Cancel
+  $('edit-cancel-btn').addEventListener('click', closeEditModal);
+
+  // Delete
+  $('edit-delete-btn').addEventListener('click', async ()=>{
+    if(!_editTx) return;
+    if(!confirm('Delete this transaction?')) return;
+    await DB.deleteTransaction(_editTx.id);
+    navigator.vibrate?.([8]);
+    showToast('Deleted');
+    closeEditModal();
+    await loadAndRender();
+  });
+
+  // Backdrop tap
+  $('edit-modal-bd').addEventListener('click', e=>{
+    if(e.target===$('edit-modal-bd')) closeEditModal();
+  });
+}
+
+
 function getSheetDate() {
   if(State.sheetDateMode==='today')     return todayStr();
   if(State.sheetDateMode==='yesterday') return yesterdayStr();
@@ -1320,10 +1763,14 @@ function updateSheetPreview() {
   State.parsedResult=result;
   const wrap=$('input-wrap'), icon=$('input-icon'), clearBtn=$('input-clear');
   const preview=$('parse-preview'), hint=$('parse-hint'), examples=$('example-chips');
-  const toWrap=$('acct-to-wrap');
 
-  // Show/hide To account based on transfer type
-  if(toWrap) toWrap.style.display=(result?.valid&&result.type==='transfer')?'flex':'none';
+  // Show/hide "To" account — visible whenever type is transfer
+  const isTransfer = result?.valid && result.type==='transfer';
+  const toWrap=$('acct-to-wrap');
+  if(toWrap) toWrap.style.display = isTransfer ? 'flex' : 'none';
+  // Update "From" label based on type
+  const fromLbl=$('acct-from-lbl');
+  if(fromLbl) fromLbl.textContent = isTransfer ? 'From' : 'Account';
 
   if(clearBtn) { if(raw) clearBtn.classList.remove('hidden'); else clearBtn.classList.add('hidden'); }
   wrap?.classList.toggle('valid',!!(result?.valid));
@@ -1363,6 +1810,11 @@ function openSheet() {
   const bd=$('sheet-backdrop'), sh=$('sheet');
   bd.style.display='flex';
   requestAnimationFrame(()=>{ bd.classList.add('visible'); sh.classList.add('show'); });
+  // Reset account selects
+  const toWrap=$('acct-to-wrap');
+  if(toWrap) toWrap.style.display='none';
+  const fromLbl=$('acct-from-lbl');
+  if(fromLbl) fromLbl.textContent='Account';
   buildCatChips(); populateAccountSelects(); updateSheetPreview();
   setTimeout(()=>$('quick-input')?.focus(),200);
 }
@@ -1439,6 +1891,9 @@ function updateNavIcons(){
 // EVENT WIRING
 // ═══════════════════════════════════════════════════════════
 function wireEvents() {
+  // Edit modal
+  wireEditModal();
+
   // Nav
   document.querySelectorAll('.nav-btn').forEach(btn=>btn.addEventListener('click',()=>{ State.activeTab=btn.dataset.tab; renderCurrentTab(); }));
 

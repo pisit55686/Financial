@@ -825,7 +825,15 @@ const PARSER = (() => {
 // ═══════════════════════════════════════════════════════════
 // SYNC
 // ═══════════════════════════════════════════════════════════
-const SYNC_CFG={endpoint:localStorage.getItem('syncEndpoint')||'',secret:localStorage.getItem('syncSecret')||'',batch:100,retries:3,retryMs:1500,timeout:15000};
+// Security model:
+//   - Apps Script URL: stored in localStorage (not sensitive, public URL)
+//   - Secret key: stored ONLY in sessionStorage (wiped when tab closes)
+//   - Never committed to source — user types it fresh each session
+const SYNC_CFG={
+  endpoint:localStorage.getItem('syncEndpoint')||'',
+  secret:sessionStorage.getItem('syncSecret')||'',  // session-only
+  batch:100,retries:3,retryMs:1500,timeout:15000
+};
 const SyncService={
   async _post(payload,attempt=1){
     if(!SYNC_CFG.endpoint) throw new Error('No endpoint configured');
@@ -995,114 +1003,131 @@ async function renderCalendar() {
   const monthStr=`${year}-${String(month+1).padStart(2,'0')}`;
   const monthName=new Date(year,month,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
 
-  // Load all transactions for this month to mark days
+  // Load month transactions once
   const allTxs=await DB.getTransactions({month:monthStr});
   const txByDate={};
-  allTxs.forEach(t=>{ if(!txByDate[t.date]) txByDate[t.date]={exp:0,inc:0,txs:[]}; const r=txByDate[t.date]; if(t.type==='expense') r.exp+=t.amount; else if(t.type==='income') r.inc+=t.amount; r.txs.push(t); });
+  allTxs.forEach(t=>{
+    if(!txByDate[t.date]) txByDate[t.date]={exp:0,inc:0,txs:[]};
+    const r=txByDate[t.date];
+    if(t.type==='expense') r.exp+=t.amount;
+    else if(t.type==='income') r.inc+=t.amount;
+    r.txs.push(t);
+  });
 
-  // Range stats
+  // Compute range stats
   let rangeStats=null;
-  if(rangeStart && rangeEnd) {
-    const s=rangeStart<=rangeEnd?rangeStart:rangeEnd;
-    const e2=rangeStart<=rangeEnd?rangeEnd:rangeStart;
+  const rs=rangeStart&&rangeEnd?(rangeStart<=rangeEnd?rangeStart:rangeEnd):rangeStart;
+  const re2=rangeStart&&rangeEnd?(rangeStart<=rangeEnd?rangeEnd:rangeStart):rangeStart;
+  if(rs){
     let inc=0,exp=0,count=0;
-    allTxs.forEach(t=>{ if(t.date>=s&&t.date<=e2){ if(t.type==='income')inc+=t.amount; else if(t.type==='expense')exp+=t.amount; count++; } });
-    rangeStats={start:s,end:e2,inc,exp,net:inc-exp,count};
-  } else if(rangeStart) {
-    const d=txByDate[rangeStart]||{exp:0,inc:0,txs:[]};
-    rangeStats={start:rangeStart,end:rangeStart,inc:d.inc,exp:d.exp,net:d.inc-d.exp,count:d.txs.length};
+    allTxs.forEach(t=>{ if(t.date>=rs&&t.date<=re2){ if(t.type==='income')inc+=t.amount; else if(t.type==='expense')exp+=t.amount; count++; } });
+    rangeStats={start:rs,end:re2,inc,exp,net:inc-exp,count};
   }
+
+  const rangeLabel=rangeStats
+    ? (rangeStats.start===rangeStats.end ? friendlyDate(rangeStats.start) : `${friendlyDate(rangeStats.start)} – ${friendlyDate(rangeStats.end)}`)
+    : 'Tap a day · Drag to select range';
 
   el.innerHTML=`
-    <div class="cal-wrap">
-      <div class="cal-header-row">
-        <button class="cal-nav-btn" id="cal-prev">‹</button>
-        <span class="cal-title">${monthName}</span>
-        <button class="cal-nav-btn" id="cal-next">›</button>
+    <div style="flex-shrink:0;padding:16px 16px 8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <button id="cal-prev" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.06);font-size:18px;color:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center">‹</button>
+        <span style="font-size:17px;font-weight:700;color:#fff">${monthName}</span>
+        <button id="cal-next" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.06);font-size:18px;color:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center">›</button>
       </div>
-      <div class="cal-day-names">
-        ${['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=>`<div class="cal-day-name">${d}</div>`).join('')}
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:4px">
+        ${['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=>`<div style="text-align:center;font-size:10px;font-weight:600;color:rgba(255,255,255,.25);padding:2px 0;text-transform:uppercase">${d}</div>`).join('')}
       </div>
-      <div class="cal-grid" id="cal-grid"></div>
+      <div id="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;touch-action:none"></div>
     </div>
-    ${rangeStats?`
-    <div class="cal-range-bar">
-      <div class="cal-range-title">${rangeStats.start===rangeStats.end?friendlyDate(rangeStats.start):`${friendlyDate(rangeStats.start)} – ${friendlyDate(rangeStats.end)}`} · ${rangeStats.count} tx</div>
-      <div class="cal-range-stats">
-        <div class="cal-stat"><div class="cal-stat-label">Income</div><div class="cal-stat-val" style="color:var(--income)">+${fmtCur(rangeStats.inc)}</div></div>
-        <div class="cal-stat"><div class="cal-stat-label">Expense</div><div class="cal-stat-val" style="color:var(--expense)">–${fmtCur(rangeStats.exp)}</div></div>
-        <div class="cal-stat"><div class="cal-stat-label">Net</div><div class="cal-stat-val" style="color:${rangeStats.net>=0?'var(--income)':'var(--expense)'}">${rangeStats.net>=0?'+':''}${fmtCur(Math.abs(rangeStats.net))}</div></div>
+    <div style="margin:0 16px 8px;background:var(--surface);border-radius:14px;border:1px solid var(--border);padding:10px 14px;flex-shrink:0">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,.3);margin-bottom:6px">${rangeLabel}${rangeStats?' · '+rangeStats.count+' tx':''}</div>
+      <div style="display:flex;justify-content:space-between">
+        <div style="text-align:center;flex:1"><div style="font-size:10px;color:rgba(255,255,255,.25);margin-bottom:2px">INCOME</div><div style="font-size:15px;font-weight:700;color:var(--income)">${rangeStats?'+'+fmtCur(rangeStats.inc):'—'}</div></div>
+        <div style="text-align:center;flex:1"><div style="font-size:10px;color:rgba(255,255,255,.25);margin-bottom:2px">EXPENSE</div><div style="font-size:15px;font-weight:700;color:var(--expense)">${rangeStats?'–'+fmtCur(rangeStats.exp):'—'}</div></div>
+        <div style="text-align:center;flex:1"><div style="font-size:10px;color:rgba(255,255,255,.25);margin-bottom:2px">NET</div><div style="font-size:15px;font-weight:700;color:${rangeStats&&rangeStats.net>=0?'var(--income)':'var(--expense)'}">${rangeStats?(rangeStats.net>=0?'+':'')+fmtCur(Math.abs(rangeStats.net)):'—'}</div></div>
       </div>
-    </div>`:''}
-    <div class="scroll" id="cal-tx-list" style="padding:8px 16px 8px"></div>
+    </div>
+    <div class="scroll" id="cal-tx-list" style="padding:0 16px 8px"></div>
     <div class="footer-bar end"><button class="fab" id="cal-fab"><svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M11 4V18M4 11H18" stroke="#1a1209" stroke-width="2.5" stroke-linecap="round"/></svg></button></div>`;
 
-  // Build grid
+  // Build cells
   const grid=$('cal-grid');
   const today=todayStr();
+  const cells=[];
 
-  // Prev-month padding cells
+  // Prev-month padding
   for(let i=0;i<firstDow;i++){
-    const cell=document.createElement('div'); cell.className='cal-cell other-month';
-    const d=prevDays-firstDow+1+i;
-    cell.innerHTML=`<span class="cal-num">${d}</span>`;
-    grid.appendChild(cell);
+    const cell=document.createElement('div');
+    cell.style.cssText='aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;opacity:.2';
+    cell.innerHTML=`<span style="font-size:13px">${prevDays-firstDow+1+i}</span>`;
+    grid.appendChild(cell); cells.push(null);
   }
 
-  // Days in month
+  // Current month days
   for(let d=1;d<=daysInMonth;d++){
     const ds=`${monthStr}-${String(d).padStart(2,'0')}`;
     const info=txByDate[ds];
-    const cell=document.createElement('div'); cell.className='cal-cell';
-    if(ds===today) cell.classList.add('today');
+    const isToday=ds===today;
+    const inRange=rs&&re2&&ds>=rs&&ds<=re2;
+    const isEdge=ds===rs||ds===re2;
 
-    // Range classes
-    const rs=rangeStart&&rangeEnd?(rangeStart<=rangeEnd?rangeStart:rangeEnd):rangeStart;
-    const re=rangeStart&&rangeEnd?(rangeStart<=rangeEnd?rangeEnd:rangeStart):rangeStart;
-    if(rs&&re&&ds>=rs&&ds<=re) cell.classList.add('in-range');
-    if(ds===rs||ds===re) cell.classList.add(ds===rs?'range-start':'range-end');
-    if(ds===rangeStart&&!rangeEnd) cell.classList.add('range-start');
+    let bg='transparent';
+    if(isEdge) bg='rgba(232,213,183,.25)';
+    else if(inRange) bg='rgba(232,213,183,.09)';
+    else if(isToday) bg='rgba(232,213,183,.1)';
 
-    let dotClass='';
-    if(info){ cell.classList.add('has-tx'); dotClass=info.inc>0&&info.exp>0?'mixed':info.inc>0?'income':''; }
+    let dotColor=null;
+    if(info) dotColor=info.inc>0&&info.exp>0?'var(--accent)':info.inc>0?'var(--income)':'var(--expense)';
 
-    cell.innerHTML=`<span class="cal-num">${d}</span>${info?`<span class="cal-dot ${dotClass}"></span>`:''}`;
+    const cell=document.createElement('div');
     cell.dataset.date=ds;
-    grid.appendChild(cell);
+    cell.style.cssText=`aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;background:${bg};transition:background .05s;position:relative`;
+    if(isToday) cell.style.outline='1px solid rgba(232,213,183,.35)';
+    cell.innerHTML=`<span style="font-size:13px;font-weight:${isToday||isEdge?700:500};color:${isEdge?'#E8D5B7':isToday?'var(--accent)':'rgba(255,255,255,.75)'}">${d}</span>${dotColor?`<span style="width:4px;height:4px;border-radius:50%;background:${dotColor};flex-shrink:0"></span>`:''}`;
+    grid.appendChild(cell); cells.push(ds);
   }
 
   // Next-month padding
   const totalCells=firstDow+daysInMonth;
   const rem=(7-totalCells%7)%7;
   for(let i=1;i<=rem;i++){
-    const cell=document.createElement('div'); cell.className='cal-cell other-month';
-    cell.innerHTML=`<span class="cal-num">${i}</span>`;
-    grid.appendChild(cell);
+    const cell=document.createElement('div');
+    cell.style.cssText='aspect-ratio:1;border-radius:8px;display:flex;align-items:center;justify-content:center;opacity:.2';
+    cell.innerHTML=`<span style="font-size:13px">${i}</span>`;
+    grid.appendChild(cell); cells.push(null);
   }
 
-  // Show transactions for selected date(s)
+  // Show transactions for selected range in scroll area
   const txList=$('cal-tx-list');
-  if(rangeStats && rangeStats.count>0){
-    const txsInRange=allTxs.filter(t=>t.date>=rangeStats.start&&t.date<=rangeStats.end).sort((a,b)=>b.createdAt-a.createdAt);
-    const groups=groupByDate(txsInRange);
-    renderTxGroups(groups,txList,false);
+  if(rangeStats&&rangeStats.count>0){
+    const txsInRange=allTxs.filter(t=>t.date>=rs&&t.date<=re2).sort((a,b)=>b.createdAt-a.createdAt);
+    renderTxGroups(groupByDate(txsInRange),txList,false);
+  } else if(!rangeStats){
+    txList.innerHTML='<p style="color:rgba(255,255,255,.2);font-size:13px;padding:8px 0">Tap a date or drag to select range</p>';
   }
 
   // Nav
-  $('cal-prev').addEventListener('click',()=>{ let {year,month}=State.cal; month--; if(month<0){month=11;year--;} State.cal.year=year;State.cal.month=month;State.cal.rangeStart=null;State.cal.rangeEnd=null; renderCalendar(); });
-  $('cal-next').addEventListener('click',()=>{ let {year,month}=State.cal; month++; if(month>11){month=0;year++;} State.cal.year=year;State.cal.month=month;State.cal.rangeStart=null;State.cal.rangeEnd=null; renderCalendar(); });
-  $('cal-fab').addEventListener('click',openSheet);
+  $('cal-prev').onclick=()=>{ const m=State.cal.month-1; State.cal.month=m<0?11:m; if(m<0)State.cal.year--; State.cal.rangeStart=null;State.cal.rangeEnd=null; renderCalendar(); };
+  $('cal-next').onclick=()=>{ const m=State.cal.month+1; State.cal.month=m>11?0:m; if(m>11)State.cal.year++; State.cal.rangeStart=null;State.cal.rangeEnd=null; renderCalendar(); };
+  $('cal-fab').onclick=()=>openSheet();
 
-  // Drag-to-select on grid — mouse + touch
-  function dateFromCell(el){ return el?.closest('[data-date]')?.dataset?.date||null; }
+  // Drag-to-select — attach to grid, use pointer events (works on touch+mouse)
+  function dateFromPoint(x,y){ const el=document.elementFromPoint(x,y); return el?.closest('[data-date]')?.dataset?.date||null; }
 
-  grid.addEventListener('mousedown', e=>{ const d=dateFromCell(e.target); if(!d)return; State.cal.dragging=true; State.cal.rangeStart=d; State.cal.rangeEnd=null; renderCalendar(); });
-  grid.addEventListener('mousemove', e=>{ if(!State.cal.dragging)return; const d=dateFromCell(e.target); if(d&&d!==State.cal.rangeEnd){State.cal.rangeEnd=d; renderCalendar();} });
-  window.addEventListener('mouseup', ()=>{ if(State.cal.dragging){State.cal.dragging=false; renderCalendar();} },{once:true});
-
-  grid.addEventListener('touchstart', e=>{ const t=e.touches[0]; const d=dateFromCell(document.elementFromPoint(t.clientX,t.clientY)); if(!d)return; State.cal.dragging=true; State.cal.rangeStart=d; State.cal.rangeEnd=null; renderCalendar(); },{passive:true});
-  grid.addEventListener('touchmove', e=>{ if(!State.cal.dragging)return; const t=e.touches[0]; const d=dateFromCell(document.elementFromPoint(t.clientX,t.clientY)); if(d&&d!==State.cal.rangeEnd){State.cal.rangeEnd=d; renderCalendar();} },{passive:true});
-  grid.addEventListener('touchend', ()=>{ State.cal.dragging=false; renderCalendar(); },{passive:true});
+  grid.addEventListener('pointerdown', e=>{
+    const d=dateFromPoint(e.clientX,e.clientY); if(!d)return;
+    grid.setPointerCapture(e.pointerId);
+    State.cal.rangeStart=d; State.cal.rangeEnd=null; State.cal.dragging=true;
+    renderCalendar();
+  });
+  grid.addEventListener('pointermove', e=>{
+    if(!State.cal.dragging)return;
+    const d=dateFromPoint(e.clientX,e.clientY);
+    if(d&&d!==State.cal.rangeEnd){ State.cal.rangeEnd=d; renderCalendar(); }
+  });
+  grid.addEventListener('pointerup', ()=>{ State.cal.dragging=false; });
+  grid.addEventListener('pointercancel', ()=>{ State.cal.dragging=false; });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1302,17 +1327,22 @@ function renderSettings() {
       <div class="settings-section-label">Google Sheets Sync</div>
       <div style="background:var(--surface);border-radius:var(--r-card);border:1px solid var(--border);margin:0 20px;overflow:hidden">
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
-          <label style="font-size:12px;color:rgba(255,255,255,.35);font-weight:500">Apps Script URL</label>
+          <label style="font-size:12px;color:rgba(255,255,255,.35);font-weight:500">Apps Script URL <span style="color:rgba(255,255,255,.2)">(safe to store)</span></label>
           <input id="ep-input" value="${esc(ep)}" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;font-size:13px;color:rgba(255,255,255,.7);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 12px">
         </div>
         <div style="height:1px;background:rgba(255,255,255,.04);margin:0 16px"></div>
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
-          <label style="font-size:12px;color:rgba(255,255,255,.35);font-weight:500">Secret Key</label>
-          <input id="secret-input" type="password" value="${esc(localStorage.getItem('syncSecret')||'')}" placeholder="your-secret-here" style="width:100%;font-size:13px;color:rgba(255,255,255,.7);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
+            <label style="font-size:12px;color:rgba(255,255,255,.35);font-weight:500">Secret Key <span style="color:rgba(255,255,255,.2)">(session only — not saved to disk)</span></label>
+            <span id="secret-session-badge" style="font-size:10px;padding:2px 8px;border-radius:999px;background:${SYNC_CFG.secret?'rgba(149,225,211,.1)':'rgba(255,255,255,.05)'};color:${SYNC_CFG.secret?'var(--income)':'rgba(255,255,255,.25)'}">${SYNC_CFG.secret?'✓ set':'not set'}</span>
+          </div>
+          <input id="secret-input" type="password" placeholder="Type secret key — clears when you close the tab" style="width:100%;font-size:13px;color:rgba(255,255,255,.7);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 12px">
+          <p style="font-size:11px;color:rgba(255,255,255,.2);line-height:1.5">🔒 Key lives in sessionStorage only. Closing this tab wipes it. Never written to localStorage or source code.</p>
         </div>
         <div style="height:1px;background:rgba(255,255,255,.04);margin:0 16px"></div>
-        <div class="settings-row">
-          <button id="save-sync-btn" style="width:100%;padding:11px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1209;font-size:14px;font-weight:700">Save & Test Connection</button>
+        <div class="settings-row" style="gap:8px">
+          <button id="save-sync-btn" style="flex:1;padding:11px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1209;font-size:14px;font-weight:700">Save & Test</button>
+          <button id="clear-secret-btn" style="padding:11px 14px;border-radius:12px;background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.2);color:var(--expense);font-size:13px;font-weight:600">Clear Key</button>
         </div>
       </div>
 
@@ -1863,23 +1893,27 @@ async function loadAndRender() {
 }
 
 function renderCurrentTab() {
-  ['home','history','summary','settings'].forEach(t=>{ $(`screen-${t}`).classList.toggle('hidden',t!==State.activeTab); });
+  ['home','history','calendar','summary','settings'].forEach(t=>{
+    const el=$(`screen-${t}`); if(el) el.classList.toggle('hidden',t!==State.activeTab);
+  });
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===State.activeTab));
   updateNavIcons();
   if(State.activeTab==='home')     renderHome();
   if(State.activeTab==='history')  renderHistory();
+  if(State.activeTab==='calendar') renderCalendar();
   if(State.activeTab==='summary')  renderSummary();
   if(State.activeTab==='settings') renderSettings();
 }
 
 function updateNavIcons(){
   const t=State.activeTab;
-  const color=(tab)=>tab===t?'#E8D5B7':'rgba(255,255,255,0.3)';
+  const c=(tab)=>tab===t?'#E8D5B7':'rgba(255,255,255,0.3)';
   const icons={
-    home:`<path d="M3 9.5L12 3L21 9.5V20C21 20.55 20.55 21 20 21H15V15H9V21H4C3.45 21 3 20.55 3 20V9.5Z" fill="${t==='home'?'#E8D5B7':'none'}" stroke="${color('home')}" stroke-width="1.5"/>`,
-    history:`<rect x="3" y="5" width="18" height="15" rx="2" stroke="${color('history')}" stroke-width="1.5"/><path d="M7 9H17M7 13H13" stroke="${color('history')}" stroke-width="1.5" stroke-linecap="round"/><path d="M7 3V7M17 3V7" stroke="${color('history')}" stroke-width="1.5" stroke-linecap="round"/>`,
-    summary:`<path d="M4 20V14M9 20V8M14 20V12M19 20V4" stroke="${color('summary')}" stroke-width="1.5" stroke-linecap="round"/>`,
-    settings:`<circle cx="12" cy="12" r="3" stroke="${color('settings')}" stroke-width="1.5"/><path d="M12 2V4M12 20V22M4.22 4.22L5.64 5.64M18.36 18.36L19.78 19.78M2 12H4M20 12H22M4.22 19.78L5.64 18.36M18.36 5.64L19.78 4.22" stroke="${color('settings')}" stroke-width="1.5" stroke-linecap="round"/>`,
+    home:`<path d="M3 9.5L12 3L21 9.5V20C21 20.55 20.55 21 20 21H15V15H9V21H4C3.45 21 3 20.55 3 20V9.5Z" fill="${t==='home'?'#E8D5B7':'none'}" stroke="${c('home')}" stroke-width="1.5"/>`,
+    history:`<rect x="3" y="5" width="18" height="15" rx="2" stroke="${c('history')}" stroke-width="1.5"/><path d="M7 9H17M7 13H13" stroke="${c('history')}" stroke-width="1.5" stroke-linecap="round"/><path d="M7 3V7M17 3V7" stroke="${c('history')}" stroke-width="1.5" stroke-linecap="round"/>`,
+    calendar:`<rect x="3" y="4" width="18" height="18" rx="2" stroke="${c('calendar')}" stroke-width="1.5"/><path d="M3 9H21M8 2V6M16 2V6" stroke="${c('calendar')}" stroke-width="1.5" stroke-linecap="round"/>`,
+    summary:`<path d="M4 20V14M9 20V8M14 20V12M19 20V4" stroke="${c('summary')}" stroke-width="1.5" stroke-linecap="round"/>`,
+    settings:`<circle cx="12" cy="12" r="3" stroke="${c('settings')}" stroke-width="1.5"/><path d="M12 2V4M12 20V22M4.22 4.22L5.64 5.64M18.36 18.36L19.78 19.78M2 12H4M20 12H22M4.22 19.78L5.64 18.36M18.36 5.64L19.78 4.22" stroke="${c('settings')}" stroke-width="1.5" stroke-linecap="round"/>`,
   };
   document.querySelectorAll('.nav-btn').forEach(btn=>{
     const tab=btn.dataset.tab, svg=btn.querySelector('svg');

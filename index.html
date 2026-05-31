@@ -297,8 +297,12 @@ input,select,textarea{font-family:inherit;color:inherit;border:none;outline:none
 .edit-save-btn{flex:1;padding:14px;border-radius:16px;font-size:15px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1209;border:none;cursor:pointer}
 .edit-cancel-btn{padding:14px 18px;border-radius:16px;font-size:15px;font-weight:600;background:rgba(255,255,255,.07);color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.08);cursor:pointer}
 .edit-delete-btn{padding:14px 16px;border-radius:16px;font-size:15px;font-weight:600;background:rgba(255,107,107,.1);color:var(--expense);border:1px solid rgba(255,107,107,.2);cursor:pointer}
+/* Sheet type selector */
+.type-sel-btn{flex:1;padding:9px 6px;border-radius:12px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.35);transition:all .15s;text-align:center;cursor:pointer}
+.type-sel-btn.active-expense{background:rgba(255,107,107,.15);border-color:rgba(255,107,107,.35);color:var(--expense)}
+.type-sel-btn.active-income{background:rgba(149,225,211,.15);border-color:rgba(149,225,211,.35);color:var(--income)}
+.type-sel-btn.active-transfer{background:rgba(148,163,184,.15);border-color:rgba(148,163,184,.35);color:#94A3B8}
 </style>
-</head>
 <body>
 <div id="app">
   <div class="screen" id="screen-home"></div>
@@ -353,10 +357,18 @@ input,select,textarea{font-family:inherit;color:inherit;border:none;outline:none
   <div id="sheet">
     <div class="sheet-handle"><div class="sheet-handle-bar"></div></div>
     <p class="sheet-label">Quick Add</p>
+
+    <!-- Type selector — Expense / Income / Transfer -->
+    <div style="display:flex;gap:6px;margin-bottom:10px" id="type-selector">
+      <button class="type-sel-btn active-expense" data-type="expense">– Expense</button>
+      <button class="type-sel-btn" data-type="income">+ Income</button>
+      <button class="type-sel-btn" data-type="transfer">→ Transfer</button>
+    </div>
+
     <div class="quick-input-wrap" id="input-wrap">
       <span class="quick-input-icon" id="input-icon">✏️</span>
       <input class="quick-input" id="quick-input" type="text"
-        placeholder="ข้าว 45 · +35000 เงินเดือน · 300>saving"
+        placeholder="45 · 1,500 · 35000 · 1.5k"
         autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
       <button class="quick-clear hidden" id="input-clear">✕</button>
     </div>
@@ -841,11 +853,11 @@ const PARSER = (() => {
   function extractNote(text,amtRaw) {
     return text.replace(/^[+＋\-−]\s*/,'').replace(/(?:->|>|→|➡)\s*.+/,'').replace(amtRaw,'').replace(/\s+/g,' ').trim()||text.trim();
   }
-  function parse(raw,cats,dateStr) {
+  function parse(raw,cats,dateStr,forcedType) {
     const text=raw.trim(); if(!text) return null;
     const amtResult=extractAmount(text);
     if(!amtResult) return {valid:false,raw:text};
-    const type=extractType(text);
+    const type=forcedType||extractType(text);
     const transferTo=type==='transfer'?(text.match(XFER_RE)||[])[1]?.trim()||null:null;
     const note=extractNote(text,amtResult.raw);
     const category=suggestCategory(note,type,cats);
@@ -932,6 +944,7 @@ const State = {
   filter:{type:null,search:''},
   categories:[], accounts:[], transactions:[],
   sheetOpen:false,
+  sheetType:'expense',
   sheetDateMode:'today',    // 'today' | 'yesterday' | 'custom'
   sheetCustomDate:todayStr(),
   sheetCustomTime:nowTimeStr(),
@@ -1029,14 +1042,13 @@ function renderTxGroups(groups, container, showSync=false) {
 // ═══════════════════════════════════════════════════════════
 async function renderCalendar() {
   const el=$('screen-calendar'); if(!el) return;
-  const {year,month,rangeStart,rangeEnd}=State.cal;
+  const {year,month}=State.cal;
+  let {rangeStart,rangeEnd}=State.cal;
   const firstDow=new Date(year,month,1).getDay();
   const daysInMonth=new Date(year,month+1,0).getDate();
-  const prevDays=new Date(year,month,0).getDate();
   const monthStr=`${year}-${String(month+1).padStart(2,'0')}`;
   const monthName=new Date(year,month,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
 
-  // Load month transactions once
   const allTxs=await DB.getTransactions({month:monthStr});
   const txByDate={};
   allTxs.forEach(t=>{
@@ -1047,120 +1059,116 @@ async function renderCalendar() {
     r.txs.push(t);
   });
 
-  // Compute range stats
-  let rangeStats=null;
   const rs=rangeStart&&rangeEnd?(rangeStart<=rangeEnd?rangeStart:rangeEnd):rangeStart;
-  const re2=rangeStart&&rangeEnd?(rangeStart<=rangeEnd?rangeEnd:rangeStart):rangeStart;
+  const re=rangeStart&&rangeEnd?(rangeStart<=rangeEnd?rangeEnd:rangeStart):rangeStart;
+
+  let stats=null;
   if(rs){
     let inc=0,exp=0,count=0;
-    allTxs.forEach(t=>{ if(t.date>=rs&&t.date<=re2){ if(t.type==='income')inc+=t.amount; else if(t.type==='expense')exp+=t.amount; count++; } });
-    rangeStats={start:rs,end:re2,inc,exp,net:inc-exp,count};
+    allTxs.forEach(t=>{ if(t.date>=rs&&t.date<=re){ if(t.type==='income')inc+=t.amount; else if(t.type==='expense')exp+=t.amount; count++; } });
+    stats={start:rs,end:re,inc,exp,net:inc-exp,count};
   }
 
-  const rangeLabel=rangeStats
-    ? (rangeStats.start===rangeStats.end ? friendlyDate(rangeStats.start) : `${friendlyDate(rangeStats.start)} – ${friendlyDate(rangeStats.end)}`)
-    : 'Tap a day · Drag to select range';
+  const today=todayStr();
+  const sym=fmtCur;
 
   el.innerHTML=`
-    <div style="flex-shrink:0;padding:16px 16px 8px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <button id="cal-prev" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.06);font-size:18px;color:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center">‹</button>
-        <span style="font-size:17px;font-weight:700;color:#fff">${monthName}</span>
-        <button id="cal-next" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.06);font-size:18px;color:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center">›</button>
+    <div style="flex-shrink:0;padding:14px 16px 6px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <button id="cal-prev" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.07);font-size:18px;color:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;flex-shrink:0">&#x2039;</button>
+        <div style="text-align:center">
+          <div style="font-size:17px;font-weight:700;color:#fff">${monthName}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.3);margin-top:1px">${allTxs.length} transactions</div>
+        </div>
+        <button id="cal-next" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.07);font-size:18px;color:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;flex-shrink:0">&#x203a;</button>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:4px">
-        ${['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=>`<div style="text-align:center;font-size:10px;font-weight:600;color:rgba(255,255,255,.25);padding:2px 0;text-transform:uppercase">${d}</div>`).join('')}
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:6px">
+        ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div style="text-align:center;font-size:10px;font-weight:600;color:rgba(255,255,255,.2);text-transform:uppercase">${d}</div>`).join('')}
       </div>
-      <div id="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;touch-action:none"></div>
+      <div id="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;touch-action:none"></div>
     </div>
-    <div style="margin:0 16px 8px;background:var(--surface);border-radius:14px;border:1px solid var(--border);padding:10px 14px;flex-shrink:0">
-      <div style="font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:rgba(255,255,255,.3);margin-bottom:6px">${rangeLabel}${rangeStats?' · '+rangeStats.count+' tx':''}</div>
-      <div style="display:flex;justify-content:space-between">
-        <div style="text-align:center;flex:1"><div style="font-size:10px;color:rgba(255,255,255,.25);margin-bottom:2px">INCOME</div><div style="font-size:15px;font-weight:700;color:var(--income)">${rangeStats?'+'+fmtCur(rangeStats.inc):'—'}</div></div>
-        <div style="text-align:center;flex:1"><div style="font-size:10px;color:rgba(255,255,255,.25);margin-bottom:2px">EXPENSE</div><div style="font-size:15px;font-weight:700;color:var(--expense)">${rangeStats?'–'+fmtCur(rangeStats.exp):'—'}</div></div>
-        <div style="text-align:center;flex:1"><div style="font-size:10px;color:rgba(255,255,255,.25);margin-bottom:2px">NET</div><div style="font-size:15px;font-weight:700;color:${rangeStats&&rangeStats.net>=0?'var(--income)':'var(--expense)'}">${rangeStats?(rangeStats.net>=0?'+':'')+fmtCur(Math.abs(rangeStats.net)):'—'}</div></div>
-      </div>
+    <div style="margin:6px 16px;flex-shrink:0;background:var(--surface);border-radius:16px;border:1px solid var(--border);padding:10px 16px">
+      ${stats ? `
+        <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,.5);margin-bottom:8px">
+          ${stats.start===stats.end ? friendlyDate(stats.start) : `${friendlyDate(stats.start)} &#x2192; ${friendlyDate(stats.end)}`}
+          <span style="color:rgba(255,255,255,.25);font-weight:400"> &middot; ${stats.count} tx</span>
+        </div>
+        <div style="display:flex;gap:0">
+          <div style="flex:1;text-align:center"><div style="font-size:10px;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Income</div><div style="font-size:15px;font-weight:700;color:var(--income)">+${fmtCur(stats.inc)}</div></div>
+          <div style="width:1px;background:rgba(255,255,255,.06)"></div>
+          <div style="flex:1;text-align:center"><div style="font-size:10px;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Expense</div><div style="font-size:15px;font-weight:700;color:var(--expense)">-${fmtCur(stats.exp)}</div></div>
+          <div style="width:1px;background:rgba(255,255,255,.06)"></div>
+          <div style="flex:1;text-align:center"><div style="font-size:10px;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Net</div><div style="font-size:15px;font-weight:700;color:${stats.net>=0?'var(--income)':'var(--expense)'}">${stats.net>=0?'+':''}${fmtCur(Math.abs(stats.net))}</div></div>
+        </div>` : `
+        <div style="text-align:center;color:rgba(255,255,255,.25);font-size:13px;padding:4px 0">Tap a day &middot; Drag to select range</div>`}
     </div>
     <div class="scroll" id="cal-tx-list" style="padding:0 16px 8px"></div>
     <div class="footer-bar end"><button class="fab" id="cal-fab"><svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M11 4V18M4 11H18" stroke="#1a1209" stroke-width="2.5" stroke-linecap="round"/></svg></button></div>`;
 
-  // Build cells
   const grid=$('cal-grid');
-  const today=todayStr();
-  const cells=[];
 
   // Prev-month padding
+  const prevDays=new Date(year,month,0).getDate();
   for(let i=0;i<firstDow;i++){
     const cell=document.createElement('div');
-    cell.style.cssText='aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;opacity:.2';
-    cell.innerHTML=`<span style="font-size:13px">${prevDays-firstDow+1+i}</span>`;
-    grid.appendChild(cell); cells.push(null);
+    cell.style.cssText='aspect-ratio:1;display:flex;align-items:center;justify-content:center;opacity:.15;border-radius:10px';
+    cell.innerHTML=`<span style="font-size:12px;color:#fff">${prevDays-firstDow+1+i}</span>`;
+    grid.appendChild(cell);
   }
 
-  // Current month days
+  // Current month
   for(let d=1;d<=daysInMonth;d++){
     const ds=`${monthStr}-${String(d).padStart(2,'0')}`;
     const info=txByDate[ds];
     const isToday=ds===today;
-    const inRange=rs&&re2&&ds>=rs&&ds<=re2;
-    const isEdge=ds===rs||ds===re2;
+    const inRange=rs&&re&&ds>=rs&&ds<=re;
+    const isEdge=ds===rs||ds===re;
 
     let bg='transparent';
-    if(isEdge) bg='rgba(232,213,183,.25)';
+    if(isEdge)       bg='rgba(232,213,183,.28)';
     else if(inRange) bg='rgba(232,213,183,.09)';
-    else if(isToday) bg='rgba(232,213,183,.1)';
-
-    let dotColor=null;
-    if(info) dotColor=info.inc>0&&info.exp>0?'var(--accent)':info.inc>0?'var(--income)':'var(--expense)';
 
     const cell=document.createElement('div');
     cell.dataset.date=ds;
-    cell.style.cssText=`aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;background:${bg};transition:background .05s;position:relative`;
-    if(isToday) cell.style.outline='1px solid rgba(232,213,183,.35)';
-    cell.innerHTML=`<span style="font-size:13px;font-weight:${isToday||isEdge?700:500};color:${isEdge?'#E8D5B7':isToday?'var(--accent)':'rgba(255,255,255,.75)'}">${d}</span>${dotColor?`<span style="width:4px;height:4px;border-radius:50%;background:${dotColor};flex-shrink:0"></span>`:''}`;
-    grid.appendChild(cell); cells.push(ds);
+    cell.style.cssText=`aspect-ratio:1;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;background:${bg};position:relative;transition:background .08s`;
+    if(isToday) cell.style.outline='1.5px solid rgba(232,213,183,.5)';
+
+    const numColor=isEdge?'#E8D5B7':isToday?'var(--accent)':info?'#fff':'rgba(255,255,255,.5)';
+    const numWeight=isEdge||isToday?'700':info?'600':'400';
+    const dotCol=info?(info.inc>0&&info.exp>0?'#E8D5B7':info.inc>0?'var(--income)':'var(--expense)'):'';
+    const dot=dotCol?`<span style="width:4px;height:4px;border-radius:50%;background:${dotCol};flex-shrink:0"></span>`:'';
+    const amtTip=info&&info.exp>0?`<span style="font-size:8px;color:rgba(255,107,107,.65);line-height:1">${fmtCmpct(info.exp)}</span>`:'';
+
+    cell.innerHTML=`<span style="font-size:13px;font-weight:${numWeight};color:${numColor};line-height:1">${d}</span>${dot}${amtTip}`;
+    grid.appendChild(cell);
   }
 
   // Next-month padding
-  const totalCells=firstDow+daysInMonth;
-  const rem=(7-totalCells%7)%7;
+  const total=firstDow+daysInMonth;
+  const rem=(7-total%7)%7;
   for(let i=1;i<=rem;i++){
     const cell=document.createElement('div');
-    cell.style.cssText='aspect-ratio:1;border-radius:8px;display:flex;align-items:center;justify-content:center;opacity:.2';
-    cell.innerHTML=`<span style="font-size:13px">${i}</span>`;
-    grid.appendChild(cell); cells.push(null);
+    cell.style.cssText='aspect-ratio:1;display:flex;align-items:center;justify-content:center;opacity:.15;border-radius:10px';
+    cell.innerHTML=`<span style="font-size:12px;color:#fff">${i}</span>`;
+    grid.appendChild(cell);
   }
 
-  // Show transactions for selected range in scroll area
+  // Transactions for selected range
   const txList=$('cal-tx-list');
-  if(rangeStats&&rangeStats.count>0){
-    const txsInRange=allTxs.filter(t=>t.date>=rs&&t.date<=re2).sort((a,b)=>b.createdAt-a.createdAt);
+  if(stats&&stats.count>0){
+    const txsInRange=allTxs.filter(t=>t.date>=rs&&t.date<=re).sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt-a.createdAt);
     renderTxGroups(groupByDate(txsInRange),txList,false);
-  } else if(!rangeStats){
-    txList.innerHTML='<p style="color:rgba(255,255,255,.2);font-size:13px;padding:8px 0">Tap a date or drag to select range</p>';
   }
 
-  // Nav
-  $('cal-prev').onclick=()=>{ const m=State.cal.month-1; State.cal.month=m<0?11:m; if(m<0)State.cal.year--; State.cal.rangeStart=null;State.cal.rangeEnd=null; renderCalendar(); };
-  $('cal-next').onclick=()=>{ const m=State.cal.month+1; State.cal.month=m>11?0:m; if(m>11)State.cal.year++; State.cal.rangeStart=null;State.cal.rangeEnd=null; renderCalendar(); };
+  $('cal-prev').onclick=()=>{ let {year:y,month:m}=State.cal; m--; if(m<0){m=11;y--;} State.cal.year=y;State.cal.month=m;State.cal.rangeStart=null;State.cal.rangeEnd=null; renderCalendar(); };
+  $('cal-next').onclick=()=>{ let {year:y,month:m}=State.cal; m++; if(m>11){m=0;y++;} State.cal.year=y;State.cal.month=m;State.cal.rangeStart=null;State.cal.rangeEnd=null; renderCalendar(); };
   $('cal-fab').onclick=()=>openSheet();
 
-  // Drag-to-select — attach to grid, use pointer events (works on touch+mouse)
-  function dateFromPoint(x,y){ const el=document.elementFromPoint(x,y); return el?.closest('[data-date]')?.dataset?.date||null; }
-
-  grid.addEventListener('pointerdown', e=>{
-    const d=dateFromPoint(e.clientX,e.clientY); if(!d)return;
-    grid.setPointerCapture(e.pointerId);
-    State.cal.rangeStart=d; State.cal.rangeEnd=null; State.cal.dragging=true;
-    renderCalendar();
-  });
-  grid.addEventListener('pointermove', e=>{
-    if(!State.cal.dragging)return;
-    const d=dateFromPoint(e.clientX,e.clientY);
-    if(d&&d!==State.cal.rangeEnd){ State.cal.rangeEnd=d; renderCalendar(); }
-  });
-  grid.addEventListener('pointerup', ()=>{ State.cal.dragging=false; });
-  grid.addEventListener('pointercancel', ()=>{ State.cal.dragging=false; });
+  function dateAt(x,y){ return document.elementFromPoint(x,y)?.closest('[data-date]')?.dataset?.date||null; }
+  grid.addEventListener('pointerdown',e=>{ const d=dateAt(e.clientX,e.clientY); if(!d)return; grid.setPointerCapture(e.pointerId); State.cal.rangeStart=d;State.cal.rangeEnd=null;State.cal.dragging=true; renderCalendar(); });
+  grid.addEventListener('pointermove',e=>{ if(!State.cal.dragging)return; const d=dateAt(e.clientX,e.clientY); if(d&&d!==State.cal.rangeEnd){State.cal.rangeEnd=d;renderCalendar();} });
+  grid.addEventListener('pointerup',()=>{State.cal.dragging=false;});
+  grid.addEventListener('pointercancel',()=>{State.cal.dragging=false;});
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1171,20 +1179,36 @@ function renderHome() {
   const income=txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const expense=txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
   const net=income-expense;
+  const totalBalance=State.accounts.reduce((s,a)=>s+(a.balance||0),0);
   el.innerHTML=`
     <div class="balance-hero">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <div class="balance-label">${formatMonth(State.activeMonth)}</div>
-        <div style="display:flex;gap:6px">
-          <button id="month-prev" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);font-size:14px;color:rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center">‹</button>
-          <button id="month-next" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);font-size:14px;color:rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center">›</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div>
+          <div class="balance-label">Total Balance</div>
+          <div class="balance-amount"><span class="currency">${(CURRENCIES[State.primaryCurrency]||CURRENCIES.THB).symbol}</span><span class="value ${totalBalance<0?'neg':''}">${fmtCmpct(Math.abs(totalBalance))}</span></div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:10px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:rgba(255,255,255,.25);margin-bottom:4px">All accounts</div>
+          ${State.accounts.map(a=>`<div style="font-size:12px;color:rgba(255,255,255,.4)">${a.icon||''} ${esc(a.name)} <span style="color:${(a.balance||0)>=0?'rgba(255,255,255,.7)':'var(--expense)'}">${fmtCur(a.balance||0)}</span></div>`).join('')}
         </div>
       </div>
-      <div class="balance-amount"><span class="currency">${(CURRENCIES[State.primaryCurrency]||CURRENCIES.THB).symbol}</span><span class="value ${net<0?'neg':''}">${fmtCmpct(Math.abs(net))}</span></div>
-      <div class="balance-pills"><span class="inc">+${fmtCur(income)}</span><span class="sep">·</span><span class="exp">–${fmtCur(expense)}</span></div>
-      ${State.secondaryCurrency&&State.fxRate>0?`<div style="margin-top:6px;font-size:12px;color:rgba(255,255,255,.3)">≈ ${fmtC(Math.abs(net)/State.fxRate,State.secondaryCurrency)} ${State.secondaryCurrency} (1${(CURRENCIES[State.secondaryCurrency]||{}).flag||''}=${State.fxRate} ${State.primaryCurrency})</div>`:''}
+      <div style="height:1px;background:rgba(255,255,255,.06);margin-bottom:10px"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:rgba(255,255,255,.25)">${formatMonth(State.activeMonth)}</div>
+        <div style="display:flex;gap:5px">
+          <button id="month-prev" style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,.06);font-size:13px;color:rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center">‹</button>
+          <button id="month-next" style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,.06);font-size:13px;color:rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center">›</button>
+        </div>
+      </div>
+      <div class="balance-pills">
+        <span class="inc">+${fmtCur(income)}</span>
+        <span class="sep">·</span>
+        <span class="exp">–${fmtCur(expense)}</span>
+        <span class="sep">·</span>
+        <span style="font-size:12px;font-weight:600;color:${net>=0?'var(--income)':'var(--expense)'}">${net>=0?'+':''}${fmtCur(net)} net</span>
+      </div>
+      ${State.secondaryCurrency&&State.fxRate>0?`<div style="margin-top:5px;font-size:11px;color:rgba(255,255,255,.25)">≈ ${fmtC(totalBalance/State.fxRate,State.secondaryCurrency)} ${State.secondaryCurrency}</div>`:''}
     </div>
-    <div class="acct-chips" id="home-acct-chips"></div>
     <div class="scroll" id="home-feed"></div>
     <div class="footer-bar">
       <div>
@@ -1196,13 +1220,6 @@ function renderHome() {
   // Month nav
   $('month-prev').addEventListener('click',()=>{ State.activeMonth=shiftMonth(State.activeMonth,-1); loadAndRender(); });
   $('month-next').addEventListener('click',()=>{ State.activeMonth=shiftMonth(State.activeMonth,+1); loadAndRender(); });
-  // Account chips
-  const achip=$('home-acct-chips');
-  State.accounts.forEach(a=>{
-    const btn=document.createElement('button'); btn.className='acct-chip';
-    btn.innerHTML=`<span class="acct-chip-name">${a.icon||'💳'} ${esc(a.name)}</span><span class="acct-chip-bal">${fmtCur(a.balance||0)}</span>`;
-    achip.appendChild(btn);
-  });
   renderTxGroups(groupByDate(txs),$('home-feed'),false);
   $('home-fab').addEventListener('click',openSheet);
 }
@@ -1861,7 +1878,8 @@ function updateSheetPreview() {
   const raw=$('quick-input').value.trim();
   const dateStr=getSheetDate();
   updateDateTimePreview();
-  const result=raw?PARSER.parse(raw,State.categories,dateStr):null;
+  // Pass sheetType directly — no auto-detection from text needed
+  const result=raw?PARSER.parse(raw,State.categories,dateStr,State.sheetType):null;
   if(result?.valid && State.catOverride) {
     const oc=State.categories.find(c=>c.id===State.catOverride);
     if(oc){ result.categoryId=oc.id; result.category=oc; }
@@ -1870,8 +1888,8 @@ function updateSheetPreview() {
   const wrap=$('input-wrap'), icon=$('input-icon'), clearBtn=$('input-clear');
   const preview=$('parse-preview'), hint=$('parse-hint'), examples=$('example-chips');
 
-  // Show/hide "To" account — visible whenever type is transfer
-  const isTransfer = result?.valid && result.type==='transfer';
+  // Show/hide "To" account — based on explicit type selection
+  const isTransfer = State.sheetType==='transfer';
   const toWrap=$('acct-to-wrap');
   if(toWrap) toWrap.style.display = isTransfer ? 'flex' : 'none';
   // Update "From" label based on type
@@ -1903,6 +1921,11 @@ function updateSheetPreview() {
 
 function openSheet() {
   State.sheetOpen=true; State.catOverride=null;
+  State.sheetType='expense';
+  // Reset type buttons
+  document.querySelectorAll('.type-sel-btn').forEach(b=>b.className='type-sel-btn');
+  const expBtn=document.querySelector('.type-sel-btn[data-type="expense"]');
+  if(expBtn) expBtn.classList.add('active-expense');
   // Reset date/time to now
   State.sheetDateMode='today';
   State.sheetCustomDate=todayStr();
@@ -2006,6 +2029,20 @@ function wireEvents() {
 
   // Nav
   document.querySelectorAll('.nav-btn').forEach(btn=>btn.addEventListener('click',()=>{ State.activeTab=btn.dataset.tab; renderCurrentTab(); }));
+
+  // Type selector in sheet
+  document.querySelectorAll('.type-sel-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      State.sheetType=btn.dataset.type; State.catOverride=null;
+      document.querySelectorAll('.type-sel-btn').forEach(b=>b.className='type-sel-btn');
+      btn.classList.add(`active-${State.sheetType}`);
+      const toWrap=$('acct-to-wrap');
+      if(toWrap) toWrap.style.display=State.sheetType==='transfer'?'flex':'none';
+      const fromLbl=$('acct-from-lbl');
+      if(fromLbl) fromLbl.textContent=State.sheetType==='transfer'?'From':'Account';
+      buildCatChips(); updateSheetPreview();
+    });
+  });
 
   // Sheet
   $('sheet-backdrop').addEventListener('click',e=>{ if(e.target===$('sheet-backdrop')) closeSheet(); });

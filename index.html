@@ -537,7 +537,7 @@ input,select,textarea{font-family:inherit;color:inherit;border:none;outline:none
 // ═══════════════════════════════════════════════════════════
 const $ = id => document.getElementById(id);
 const fmtNum = n => new Intl.NumberFormat('th-TH',{maximumFractionDigits:0}).format(n||0);
-const fmtCur = n => '฿'+fmtNum(n);
+const fmtCur = n => fmtC(n, State?.primaryCurrency||'THB');
 const fmtCmpct = n => n>=1e6?`${(n/1e6).toFixed(1)}M`:n>=1e4?`${Math.round(n/1e3)}k`:n>=1e3?`${(n/1e3).toFixed(1)}k`:String(Math.round(n));
 const nanoid = (n=12) => { const c='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; return Array.from({length:n},()=>c[Math.floor(Math.random()*c.length)]).join(''); };
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
@@ -597,6 +597,37 @@ function shiftMonth(ym, delta) {
 
 const TYPE_SIGN  = {income:'+',expense:'–',transfer:'→'};
 const SYNC_COLOR = {local:'#E8D5B7',pending:'#FFD93D',synced:'#95E1D3',failed:'#FF6B6B'};
+
+// ── Multi-currency ───────────────────────────────────────────
+const CURRENCIES = {
+  THB:{symbol:'฿', name:'Thai Baht',          flag:'🇹🇭', decimals:0},
+  USD:{symbol:'$', name:'US Dollar',           flag:'🇺🇸', decimals:2},
+  EUR:{symbol:'€', name:'Euro',                flag:'🇪🇺', decimals:2},
+  JPY:{symbol:'¥', name:'Japanese Yen',        flag:'🇯🇵', decimals:0},
+  GBP:{symbol:'£', name:'British Pound',       flag:'🇬🇧', decimals:2},
+  SGD:{symbol:'S$',name:'Singapore Dollar',    flag:'🇸🇬', decimals:2},
+  HKD:{symbol:'HK$',name:'Hong Kong Dollar',  flag:'🇭🇰', decimals:2},
+  AUD:{symbol:'A$',name:'Australian Dollar',   flag:'🇦🇺', decimals:2},
+  CNY:{symbol:'¥', name:'Chinese Yuan',        flag:'🇨🇳', decimals:2},
+  KRW:{symbol:'₩', name:'Korean Won',          flag:'🇰🇷', decimals:0},
+  MYR:{symbol:'RM',name:'Malaysian Ringgit',   flag:'🇲🇾', decimals:2},
+  VND:{symbol:'₫', name:'Vietnamese Dong',     flag:'🇻🇳', decimals:0},
+  TWD:{symbol:'NT$',name:'Taiwan Dollar',      flag:'🇹🇼', decimals:0},
+  INR:{symbol:'₹', name:'Indian Rupee',        flag:'🇮🇳', decimals:2},
+};
+// State.primaryCurrency  — base (e.g. THB)
+// State.secondaryCurrency — travel currency (e.g. JPY); null = off
+// State.fxRate — how many PRIMARY per 1 SECONDARY (e.g. 1 JPY = 0.24 THB → 0.24)
+
+function fmtC(n, cur) {
+  const info = CURRENCIES[cur] || {symbol:cur, decimals:2};
+  const fmt = new Intl.NumberFormat('en-US',{minimumFractionDigits:0, maximumFractionDigits:info.decimals});
+  return info.symbol + fmt.format(n||0);
+}
+function convertToSecondary(thbAmount) {
+  if(!State.secondaryCurrency || !State.fxRate || State.fxRate<=0) return null;
+  return thbAmount / State.fxRate;
+}
 const STATUS_META= {
   idle:   {color:'rgba(255,255,255,.3)',label:'Ready to sync',dot:'#6C757D'},
   syncing:{color:'#E8D5B7',label:'Syncing…',dot:'#E8D5B7'},
@@ -768,12 +799,14 @@ const DB = (() => {
     await new Promise(r=>t.oncomplete=r);
   }
   async function writeSyncLog(entry) { return req2p(_db.transaction('syncLog','readwrite').objectStore('syncLog').add(entry)); }
+  async function getSetting(key) { return req2p(_db.transaction('settings').objectStore('settings').get(key)); }
+  async function setSetting(key,val) { return req2p(_db.transaction('settings','readwrite').objectStore('settings').put(val,key)); }
 
   return {open,seed,getTransactions,getTransaction,addTransaction,updateTransaction,deleteTransaction,markSyncStatus,
           resetFailedToLocal,getUnsyncedTransactions,countUnsynced,getMonthlyStats,
           bumpCategory,getCategories,saveCategory,deleteCategory,
           getAccounts,saveAccount,deleteAccount,getAccountBalances,
-          clearAllData,writeSyncLog};
+          clearAllData,writeSyncLog,getSetting,setSetting};
 })();
 
 // ═══════════════════════════════════════════════════════════
@@ -825,13 +858,9 @@ const PARSER = (() => {
 // ═══════════════════════════════════════════════════════════
 // SYNC
 // ═══════════════════════════════════════════════════════════
-// Security model:
-//   - Apps Script URL: stored in localStorage (not sensitive, public URL)
-//   - Secret key: stored ONLY in sessionStorage (wiped when tab closes)
-//   - Never committed to source — user types it fresh each session
 const SYNC_CFG={
   endpoint:localStorage.getItem('syncEndpoint')||'',
-  secret:sessionStorage.getItem('syncSecret')||'',  // session-only
+  secret:localStorage.getItem('syncSecret')||'',
   batch:100,retries:3,retryMs:1500,timeout:15000
 };
 const SyncService={
@@ -908,6 +937,9 @@ const State = {
   sheetCustomTime:nowTimeStr(),
   parsedResult:null, catOverride:null, acctFromId:'wallet', acctToId:null,
   cal:{ year:new Date().getFullYear(), month:new Date().getMonth(), rangeStart:null, rangeEnd:null, dragging:false },
+  primaryCurrency:'THB',
+  secondaryCurrency:null,
+  fxRate:1,
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -933,6 +965,7 @@ function renderTxRow(tx, showSync=false) {
   const acct=State.accounts.find(a=>a.id===tx.accountFromId);
   const acctTo=tx.accountToId?State.accounts.find(a=>a.id===tx.accountToId):null;
   const amtColor=tx.type==='income'?'var(--income)':tx.type==='transfer'?'rgba(255,255,255,.4)':'rgba(255,255,255,.85)';
+  const secAmt = State.secondaryCurrency&&State.fxRate>0 ? convertToSecondary(tx.amount) : null;
   const div=document.createElement('div'); div.className='tx-row'; div.dataset.id=tx.id;
   const acctHtml=acct?`<span class="tx-acct">${acct.icon||''} ${esc(acct.name)}${acctTo?` → ${acctTo.icon||''} ${esc(acctTo.name)}`:''}</span>`:'';
   // Time display
@@ -952,7 +985,7 @@ function renderTxRow(tx, showSync=false) {
         ${showSync?`<span class="sync-dot" style="background:${SYNC_COLOR[tx.syncStatus]||'#6C757D'}" title="${tx.syncStatus}"></span>`:''}
       </div>
     </div>
-    <span class="tx-amount ${tx.type}" style="color:${amtColor}">${TYPE_SIGN[tx.type]}${fmtCur(tx.amount)}</span>
+    <span class="tx-amount ${tx.type}" style="color:${amtColor}">${TYPE_SIGN[tx.type]}${fmtCur(tx.amount)}${secAmt!==null?`<br><span style="font-size:10px;color:rgba(255,255,255,.25);font-weight:400">${TYPE_SIGN[tx.type]}${fmtC(secAmt,State.secondaryCurrency)}</span>`:''}</span>
     <button class="tx-del" data-del="${tx.id}" title="Delete">✕</button>`;
 
   // Tap anywhere on the row (except delete btn) → open edit
@@ -1147,8 +1180,9 @@ function renderHome() {
           <button id="month-next" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);font-size:14px;color:rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center">›</button>
         </div>
       </div>
-      <div class="balance-amount"><span class="currency">฿</span><span class="value ${net<0?'neg':''}">${fmtCmpct(Math.abs(net))}</span></div>
+      <div class="balance-amount"><span class="currency">${(CURRENCIES[State.primaryCurrency]||CURRENCIES.THB).symbol}</span><span class="value ${net<0?'neg':''}">${fmtCmpct(Math.abs(net))}</span></div>
       <div class="balance-pills"><span class="inc">+${fmtCur(income)}</span><span class="sep">·</span><span class="exp">–${fmtCur(expense)}</span></div>
+      ${State.secondaryCurrency&&State.fxRate>0?`<div style="margin-top:6px;font-size:12px;color:rgba(255,255,255,.3)">≈ ${fmtC(Math.abs(net)/State.fxRate,State.secondaryCurrency)} ${State.secondaryCurrency} (1${(CURRENCIES[State.secondaryCurrency]||{}).flag||''}=${State.fxRate} ${State.primaryCurrency})</div>`:''}
     </div>
     <div class="acct-chips" id="home-acct-chips"></div>
     <div class="scroll" id="home-feed"></div>
@@ -1312,6 +1346,36 @@ function renderSettings() {
         </div>
       </div>
 
+      <div class="settings-section-label">Currency</div>
+      <div style="background:var(--surface);border-radius:var(--r-card);border:1px solid var(--border);margin:0 20px;overflow:hidden">
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+          <label style="font-size:12px;color:rgba(255,255,255,.35);font-weight:500">Primary Currency</label>
+          <select id="primary-cur" style="width:100%;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);color:#fff;font-size:14px;color-scheme:dark">
+            ${Object.entries(CURRENCIES).map(([k,v])=>`<option value="${k}" ${k===State.primaryCurrency?'selected':''}>${v.flag} ${k} — ${v.name}</option>`).join('')}
+          </select>
+        </div>
+        <div style="height:1px;background:rgba(255,255,255,.04);margin:0 16px"></div>
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+          <label style="font-size:12px;color:rgba(255,255,255,.35);font-weight:500">Secondary Currency <span style="color:rgba(255,255,255,.2)">(travel mode)</span></label>
+          <select id="secondary-cur" style="width:100%;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);color:#fff;font-size:14px;color-scheme:dark">
+            <option value="">Off</option>
+            ${Object.entries(CURRENCIES).filter(([k])=>k!==State.primaryCurrency).map(([k,v])=>`<option value="${k}" ${k===State.secondaryCurrency?'selected':''}>${v.flag} ${k} — ${v.name}</option>`).join('')}
+          </select>
+        </div>
+        <div id="fx-rate-row" style="${State.secondaryCurrency?'':'display:none'}">
+          <div style="height:1px;background:rgba(255,255,255,.04);margin:0 16px"></div>
+          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+            <label style="font-size:12px;color:rgba(255,255,255,.35);font-weight:500">Exchange Rate — 1 <span id="fx-sec-label">${State.secondaryCurrency||''}</span> = ? <span id="fx-pri-label">${State.primaryCurrency}</span></label>
+            <input id="fx-rate-input" type="number" value="${State.fxRate}" placeholder="e.g. 0.24" step="0.0001" min="0" style="width:100%;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);color:var(--accent);font-size:15px;font-weight:600">
+            <p style="font-size:11px;color:rgba(255,255,255,.2)">Amounts in secondary currency will be converted to primary using this rate.</p>
+          </div>
+        </div>
+        <div style="height:1px;background:rgba(255,255,255,.04);margin:0 16px"></div>
+        <div class="settings-row">
+          <button id="save-currency-btn" style="width:100%;padding:11px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1209;font-size:14px;font-weight:700">Save Currency Settings</button>
+        </div>
+      </div>
+
       <div class="settings-section-label">Accounts</div>
       <div id="acct-list" style="margin:0 20px"></div>
       <div style="margin:8px 20px 0">
@@ -1327,22 +1391,17 @@ function renderSettings() {
       <div class="settings-section-label">Google Sheets Sync</div>
       <div style="background:var(--surface);border-radius:var(--r-card);border:1px solid var(--border);margin:0 20px;overflow:hidden">
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
-          <label style="font-size:12px;color:rgba(255,255,255,.35);font-weight:500">Apps Script URL <span style="color:rgba(255,255,255,.2)">(safe to store)</span></label>
+          <label style="font-size:12px;color:rgba(255,255,255,.35);font-weight:500">Apps Script URL</label>
           <input id="ep-input" value="${esc(ep)}" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;font-size:13px;color:rgba(255,255,255,.7);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 12px">
         </div>
         <div style="height:1px;background:rgba(255,255,255,.04);margin:0 16px"></div>
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
-          <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
-            <label style="font-size:12px;color:rgba(255,255,255,.35);font-weight:500">Secret Key <span style="color:rgba(255,255,255,.2)">(session only — not saved to disk)</span></label>
-            <span id="secret-session-badge" style="font-size:10px;padding:2px 8px;border-radius:999px;background:${SYNC_CFG.secret?'rgba(149,225,211,.1)':'rgba(255,255,255,.05)'};color:${SYNC_CFG.secret?'var(--income)':'rgba(255,255,255,.25)'}">${SYNC_CFG.secret?'✓ set':'not set'}</span>
-          </div>
-          <input id="secret-input" type="password" placeholder="Type secret key — clears when you close the tab" style="width:100%;font-size:13px;color:rgba(255,255,255,.7);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 12px">
-          <p style="font-size:11px;color:rgba(255,255,255,.2);line-height:1.5">🔒 Key lives in sessionStorage only. Closing this tab wipes it. Never written to localStorage or source code.</p>
+          <label style="font-size:12px;color:rgba(255,255,255,.35);font-weight:500">Secret Key</label>
+          <input id="secret-input" type="password" value="${esc(localStorage.getItem('syncSecret')||'')}" placeholder="your-secret-here" style="width:100%;font-size:13px;color:rgba(255,255,255,.7);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 12px">
         </div>
         <div style="height:1px;background:rgba(255,255,255,.04);margin:0 16px"></div>
-        <div class="settings-row" style="gap:8px">
-          <button id="save-sync-btn" style="flex:1;padding:11px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1209;font-size:14px;font-weight:700">Save & Test</button>
-          <button id="clear-secret-btn" style="padding:11px 14px;border-radius:12px;background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.2);color:var(--expense);font-size:13px;font-weight:600">Clear Key</button>
+        <div class="settings-row">
+          <button id="save-sync-btn" style="width:100%;padding:11px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1209;font-size:14px;font-weight:700">Save & Test Connection</button>
         </div>
       </div>
 
@@ -1369,12 +1428,29 @@ function renderSettings() {
       <p style="text-align:center;font-size:11px;color:rgba(255,255,255,.1);padding:20px">All data stored locally on your device</p>
     </div>`;
 
-  // Render account list
   renderSettingsAccounts();
   renderSettingsCategories();
   DB.getTransactions().then(txs=>{ const v=$('tx-count-val'); if(v) v.textContent=txs.length; });
   $('add-acct-btn').addEventListener('click',()=>openAcctModal(null));
   $('add-cat-btn').addEventListener('click',()=>openCatModal(null));
+
+  // Currency section
+  $('secondary-cur').addEventListener('change',()=>{
+    const sec=$('secondary-cur').value;
+    const row=$('fx-rate-row');
+    if(row) row.style.display=sec?'block':'none';
+    if($('fx-sec-label')) $('fx-sec-label').textContent=sec;
+  });
+  $('save-currency-btn').addEventListener('click',async()=>{
+    State.primaryCurrency=$('primary-cur').value||'THB';
+    State.secondaryCurrency=$('secondary-cur').value||null;
+    State.fxRate=parseFloat($('fx-rate-input')?.value)||1;
+    await DB.setSetting('primaryCurrency',State.primaryCurrency);
+    await DB.setSetting('secondaryCurrency',State.secondaryCurrency||'');
+    await DB.setSetting('fxRate',State.fxRate);
+    showToast(`Saved: ${State.primaryCurrency}${State.secondaryCurrency?' + '+State.secondaryCurrency:''}`);
+    renderSettings(); // re-render to update dropdowns
+  });
   $('save-sync-btn').addEventListener('click',async()=>{
     const ep=$('ep-input').value.trim(), sec=$('secret-input').value.trim();
     localStorage.setItem('syncEndpoint',ep); localStorage.setItem('syncSecret',sec);
@@ -2046,6 +2122,13 @@ async function boot() {
   await DB.seed();
   State.categories=await DB.getCategories();
   State.accounts=await DB.getAccountBalances();
+  // Load currency settings
+  const savedPrimary=await DB.getSetting('primaryCurrency');
+  const savedSecondary=await DB.getSetting('secondaryCurrency');
+  const savedFxRate=await DB.getSetting('fxRate');
+  if(savedPrimary) State.primaryCurrency=savedPrimary;
+  if(savedSecondary) State.secondaryCurrency=savedSecondary||null;
+  if(savedFxRate) State.fxRate=parseFloat(savedFxRate)||1;
   // Default acctToId
   if(State.accounts.length>1) State.acctToId=State.accounts[1].id;
   // Init date/time inputs to now

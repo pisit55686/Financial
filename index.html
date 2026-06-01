@@ -1073,36 +1073,45 @@ async function renderCalendar() {
   const sym=fmtCur;
 
   el.innerHTML=`
-    <div style="flex-shrink:0;padding:14px 16px 6px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <button id="cal-prev" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.07);font-size:18px;color:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;flex-shrink:0">&#x2039;</button>
-        <div style="text-align:center">
-          <div style="font-size:17px;font-weight:700;color:#fff">${monthName}</div>
-          <div style="font-size:11px;color:rgba(255,255,255,.3);margin-top:1px">${allTxs.length} transactions</div>
+    <div class="scroll" id="cal-scroll" style="padding:0">
+      <!-- Header -->
+      <div style="padding:14px 16px 6px;flex-shrink:0">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <button id="cal-prev" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.07);font-size:18px;color:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;flex-shrink:0">&#x2039;</button>
+          <div style="text-align:center">
+            <div style="font-size:17px;font-weight:700;color:#fff">${monthName}</div>
+            <div style="font-size:11px;color:rgba(255,255,255,.3);margin-top:1px">${allTxs.length} transactions this month</div>
+          </div>
+          <button id="cal-next" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.07);font-size:18px;color:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;flex-shrink:0">&#x203a;</button>
         </div>
-        <button id="cal-next" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.07);font-size:18px;color:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;flex-shrink:0">&#x203a;</button>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:6px">
-        ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div style="text-align:center;font-size:10px;font-weight:600;color:rgba(255,255,255,.2);text-transform:uppercase">${d}</div>`).join('')}
-      </div>
-      <div id="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;touch-action:none"></div>
-    </div>
-    <div style="margin:6px 16px;flex-shrink:0;background:var(--surface);border-radius:16px;border:1px solid var(--border);padding:10px 16px">
-      ${stats ? `
-        <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,.5);margin-bottom:8px">
-          ${stats.start===stats.end ? friendlyDate(stats.start) : `${friendlyDate(stats.start)} &#x2192; ${friendlyDate(stats.end)}`}
-          <span style="color:rgba(255,255,255,.25);font-weight:400"> &middot; ${stats.count} tx</span>
+        <!-- Day names -->
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:4px">
+          ${['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=>`<div style="text-align:center;font-size:10px;font-weight:600;color:rgba(255,255,255,.2);text-transform:uppercase;padding:2px 0">${d}</div>`).join('')}
         </div>
-        <div style="display:flex;gap:0">
-          <div style="flex:1;text-align:center"><div style="font-size:10px;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Income</div><div style="font-size:15px;font-weight:700;color:var(--income)">+${fmtCur(stats.inc)}</div></div>
-          <div style="width:1px;background:rgba(255,255,255,.06)"></div>
-          <div style="flex:1;text-align:center"><div style="font-size:10px;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Expense</div><div style="font-size:15px;font-weight:700;color:var(--expense)">-${fmtCur(stats.exp)}</div></div>
-          <div style="width:1px;background:rgba(255,255,255,.06)"></div>
-          <div style="flex:1;text-align:center"><div style="font-size:10px;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Net</div><div style="font-size:15px;font-weight:700;color:${stats.net>=0?'var(--income)':'var(--expense)'}">${stats.net>=0?'+':''}${fmtCur(Math.abs(stats.net))}</div></div>
-        </div>` : `
-        <div style="text-align:center;color:rgba(255,255,255,.25);font-size:13px;padding:4px 0">Tap a day &middot; Drag to select range</div>`}
+        <!-- Grid — fixed height cells, not aspect-ratio -->
+        <div id="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;touch-action:none"></div>
+      </div>
+
+      <!-- Stats bar -->
+      <div style="margin:8px 16px;background:var(--surface);border-radius:16px;border:1px solid var(--border);padding:10px 16px">
+        ${stats ? `
+          <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,.5);margin-bottom:8px">
+            ${stats.start===stats.end ? friendlyDate(stats.start) : `${friendlyDate(stats.start)} &#x2192; ${friendlyDate(stats.end)}`}
+            <span style="color:rgba(255,255,255,.25);font-weight:400"> &middot; ${stats.count} tx</span>
+          </div>
+          <div style="display:flex;gap:0">
+            <div style="flex:1;text-align:center"><div style="font-size:10px;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Income</div><div style="font-size:15px;font-weight:700;color:var(--income)">+${fmtCur(stats.inc)}</div></div>
+            <div style="width:1px;background:rgba(255,255,255,.06)"></div>
+            <div style="flex:1;text-align:center"><div style="font-size:10px;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Expense</div><div style="font-size:15px;font-weight:700;color:var(--expense)">-${fmtCur(stats.exp)}</div></div>
+            <div style="width:1px;background:rgba(255,255,255,.06)"></div>
+            <div style="flex:1;text-align:center"><div style="font-size:10px;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Net</div><div style="font-size:15px;font-weight:700;color:${stats.net>=0?'var(--income)':'var(--expense)'}">${stats.net>=0?'+':''}${fmtCur(Math.abs(stats.net))}</div></div>
+          </div>` : `
+          <div style="text-align:center;color:rgba(255,255,255,.25);font-size:13px;padding:4px 0">Tap a day &middot; Drag to select range</div>`}
+      </div>
+
+      <!-- Transaction list — flows naturally below calendar -->
+      <div id="cal-tx-list" style="padding:0 16px 16px"></div>
     </div>
-    <div class="scroll" id="cal-tx-list" style="padding:0 16px 8px"></div>
     <div class="footer-bar end"><button class="fab" id="cal-fab"><svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M11 4V18M4 11H18" stroke="#1a1209" stroke-width="2.5" stroke-linecap="round"/></svg></button></div>`;
 
   const grid=$('cal-grid');
@@ -1111,7 +1120,7 @@ async function renderCalendar() {
   const prevDays=new Date(year,month,0).getDate();
   for(let i=0;i<firstDow;i++){
     const cell=document.createElement('div');
-    cell.style.cssText='aspect-ratio:1;display:flex;align-items:center;justify-content:center;opacity:.15;border-radius:10px';
+    cell.style.cssText='height:38px;display:flex;align-items:center;justify-content:center;opacity:.15;border-radius:8px';
     cell.innerHTML=`<span style="font-size:12px;color:#fff">${prevDays-firstDow+1+i}</span>`;
     grid.appendChild(cell);
   }
@@ -1130,14 +1139,14 @@ async function renderCalendar() {
 
     const cell=document.createElement('div');
     cell.dataset.date=ds;
-    cell.style.cssText=`aspect-ratio:1;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;background:${bg};position:relative;transition:background .08s`;
+    cell.style.cssText=`height:38px;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;background:${bg};position:relative;transition:background .08s`;
     if(isToday) cell.style.outline='1.5px solid rgba(232,213,183,.5)';
 
-    const numColor=isEdge?'#E8D5B7':isToday?'var(--accent)':info?'#fff':'rgba(255,255,255,.5)';
+    const numColor=isEdge?'#E8D5B7':isToday?'var(--accent)':info?'#fff':'rgba(255,255,255,.45)';
     const numWeight=isEdge||isToday?'700':info?'600':'400';
     const dotCol=info?(info.inc>0&&info.exp>0?'#E8D5B7':info.inc>0?'var(--income)':'var(--expense)'):'';
-    const dot=dotCol?`<span style="width:4px;height:4px;border-radius:50%;background:${dotCol};flex-shrink:0"></span>`:'';
-    const amtTip=info&&info.exp>0?`<span style="font-size:8px;color:rgba(255,107,107,.65);line-height:1">${fmtCmpct(info.exp)}</span>`:'';
+    const dot=dotCol?`<span style="width:3px;height:3px;border-radius:50%;background:${dotCol};flex-shrink:0"></span>`:'';
+    const amtTip=info&&info.exp>0?`<span style="font-size:7px;color:rgba(255,107,107,.6);line-height:1">${fmtCmpct(info.exp)}</span>`:'';
 
     cell.innerHTML=`<span style="font-size:13px;font-weight:${numWeight};color:${numColor};line-height:1">${d}</span>${dot}${amtTip}`;
     grid.appendChild(cell);
@@ -1148,7 +1157,7 @@ async function renderCalendar() {
   const rem=(7-total%7)%7;
   for(let i=1;i<=rem;i++){
     const cell=document.createElement('div');
-    cell.style.cssText='aspect-ratio:1;display:flex;align-items:center;justify-content:center;opacity:.15;border-radius:10px';
+    cell.style.cssText='height:38px;display:flex;align-items:center;justify-content:center;opacity:.15;border-radius:8px';
     cell.innerHTML=`<span style="font-size:12px;color:#fff">${i}</span>`;
     grid.appendChild(cell);
   }

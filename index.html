@@ -810,6 +810,22 @@ const DB = (() => {
     cats.forEach(c=>t.objectStore('categories').put({...c,usageCount:0}));
     await new Promise(r=>t.oncomplete=r);
   }
+  async function importFromSheet(rows) {
+    // Skip rows that already exist (idempotent)
+    const existing = new Set((await getAll('transactions')).map(t=>t.id));
+    const newRows = rows.filter(r=>r.id&&!existing.has(r.id));
+    if(!newRows.length) return {inserted:0,skipped:rows.length};
+    const t=_db.transaction('transactions','readwrite');
+    newRows.forEach(r=>t.objectStore('transactions').put({
+      id:r.id, type:r.type||'expense', amount:Number(r.amount)||0,
+      currency:r.currency||'THB', categoryId:r.categoryId||'other',
+      note:r.note||'', date:r.date||todayStr(),
+      accountFromId:r.accountFromId||'wallet', accountToId:r.accountToId||undefined,
+      syncStatus:'synced', createdAt:r.createdAt||Date.now(), updatedAt:Date.now(),
+    }));
+    await new Promise(res=>t.oncomplete=res);
+    return {inserted:newRows.length, skipped:existing.size};
+  }
   async function writeSyncLog(entry) { return req2p(_db.transaction('syncLog','readwrite').objectStore('syncLog').add(entry)); }
   async function getSetting(key) { return req2p(_db.transaction('settings').objectStore('settings').get(key)); }
   async function setSetting(key,val) { return req2p(_db.transaction('settings','readwrite').objectStore('settings').put(val,key)); }
@@ -818,7 +834,7 @@ const DB = (() => {
           resetFailedToLocal,getUnsyncedTransactions,countUnsynced,getMonthlyStats,
           bumpCategory,getCategories,saveCategory,deleteCategory,
           getAccounts,saveAccount,deleteAccount,getAccountBalances,
-          clearAllData,writeSyncLog,getSetting,setSetting};
+          clearAllData,writeSyncLog,getSetting,setSetting,importFromSheet};
 })();
 
 // ═══════════════════════════════════════════════════════════
@@ -896,6 +912,9 @@ const SyncService={
   async appendRows(txs){
     const rows=txs.map(t=>({id:t.id,date:t.date,type:t.type,amount:t.amount,currency:t.currency||'THB',categoryId:t.categoryId,note:t.note,accountFromId:t.accountFromId||'wallet',accountToId:t.accountToId||''}));
     return this._post({action:'append',rows});
+  },
+  async fetchRows(){
+    return this._post({action:'fetch'});
   },
 };
 const SyncQueue=(()=>{
@@ -1440,6 +1459,11 @@ function renderSettings() {
         </div>
         <div style="height:1px;background:rgba(255,255,255,.04);margin:0 16px"></div>
         <div class="settings-row">
+          <div class="settings-icon" style="background:rgba(149,225,211,.08)">☁️</div>
+          <button class="settings-label" id="restore-btn" style="color:var(--income)">Restore from Google Sheets</button>
+        </div>
+        <div style="height:1px;background:rgba(255,255,255,.04);margin:0 16px"></div>
+        <div class="settings-row">
           <div class="settings-icon" style="background:rgba(255,107,107,.08)">🗑️</div>
           <button class="settings-label danger" id="clear-btn">Clear all transactions</button>
         </div>
@@ -1486,6 +1510,18 @@ function renderSettings() {
     const ok=await SyncService.ping();
     showToast(ok?'✓ Connected':'✕ Could not reach endpoint',ok?'success':'error');
   });
+  $('restore-btn').addEventListener('click',async()=>{
+    if(!SYNC_CFG.endpoint){ showToast('Set Apps Script URL first','error'); return; }
+    showToast('Fetching from Sheets…','info');
+    try {
+      const result=await SyncService.fetchRows();
+      if(!result.ok||!result.rows) throw new Error(result.error||'No data');
+      const {inserted,skipped}=await DB.importFromSheet(result.rows);
+      State.categories=await DB.getCategories();
+      await loadAndRender();
+      showToast(`Restored ${inserted} new · ${skipped} already existed`);
+    } catch(e){ showToast('Restore failed: '+e.message,'error'); }
+  });
   $('clear-btn').addEventListener('click',async()=>{
     if(!confirm('Delete ALL transactions? Cannot be undone.')) return;
     await DB.clearAllData(); showToast('All data cleared'); await loadAndRender();
@@ -1499,8 +1535,25 @@ function doPost(e) {
     if (body.action === "ping")   return json({ ok: true });
     if (body.action === "append") return json(handleAppend(body.rows||[]));
     if (body.action === "delete") return json(handleDelete(body.ids||[]));
+    if (body.action === "fetch")  return json(handleFetch());
     return json({ ok: false, error: "unknown_action" });
   } catch(err) { return json({ ok: false, error: String(err) }); }
+}
+function handleFetch() {
+  const sheet = getSheet();
+  const data  = sheet.getDataRange().getValues();
+  var rows = [];
+  for (var i = 1; i < data.length; i++) {
+    var r = data[i];
+    if (!r[0]) continue;
+    rows.push({
+      id: String(r[0]), date: String(r[1]), type: String(r[2]),
+      amount: Number(r[3]), currency: String(r[4]||"THB"),
+      categoryId: String(r[5]||"other"), note: String(r[6]||""),
+      accountFromId: String(r[7]||"wallet"), accountToId: String(r[8]||"")
+    });
+  }
+  return { ok: true, rows: rows };
 }
 function handleAppend(rows) {
   const sheet = getSheet(), existing = getIds(sheet);

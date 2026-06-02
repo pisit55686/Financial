@@ -1081,13 +1081,16 @@ async function renderCalendar() {
   const rs=rangeStart&&rangeEnd?(rangeStart<=rangeEnd?rangeStart:rangeEnd):rangeStart;
   const re=rangeStart&&rangeEnd?(rangeStart<=rangeEnd?rangeEnd:rangeStart):rangeStart;
 
+  // Stats across ALL months (range may span months)
   let stats=null;
   if(rs){
+    const allForRange=await DB.getTransactions({});
     let inc=0,exp=0,count=0;
-    allTxs.forEach(t=>{ if(t.date>=rs&&t.date<=re){ if(t.type==='income')inc+=t.amount; else if(t.type==='expense')exp+=t.amount; count++; } });
+    allForRange.forEach(t=>{ if(t.date>=rs&&t.date<=re){ if(t.type==='income')inc+=t.amount; else if(t.type==='expense')exp+=t.amount; count++; } });
     stats={start:rs,end:re,inc,exp,net:inc-exp,count};
   }
 
+  const isCrossMonth = rangeStart && rangeEnd && rangeStart.slice(0,7) !== rangeEnd.slice(0,7);
   const today=todayStr();
   const sym=fmtCur;
 
@@ -1114,9 +1117,13 @@ async function renderCalendar() {
       <!-- Stats bar -->
       <div style="margin:8px 16px;background:var(--surface);border-radius:16px;border:1px solid var(--border);padding:10px 16px">
         ${stats ? `
-          <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,.5);margin-bottom:8px">
-            ${stats.start===stats.end ? friendlyDate(stats.start) : `${friendlyDate(stats.start)} &#x2192; ${friendlyDate(stats.end)}`}
-            <span style="color:rgba(255,255,255,.25);font-weight:400"> &middot; ${stats.count} tx</span>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,.5)">
+              ${stats.start===stats.end ? friendlyDate(stats.start) : `${friendlyDate(stats.start)} &#x2192; ${friendlyDate(stats.end)}`}
+              <span style="color:rgba(255,255,255,.25);font-weight:400"> &middot; ${stats.count} tx</span>
+              ${isCrossMonth?`<span style="color:var(--accent);font-weight:400"> &middot; cross-month</span>`:''}
+            </div>
+            <button id="cal-clear-range" style="font-size:11px;color:rgba(255,255,255,.3);background:rgba(255,255,255,.06);border:none;padding:3px 10px;border-radius:999px;cursor:pointer">✕ Clear</button>
           </div>
           <div style="display:flex;gap:0">
             <div style="flex:1;text-align:center"><div style="font-size:10px;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Income</div><div style="font-size:15px;font-weight:700;color:var(--income)">+${fmtCur(stats.inc)}</div></div>
@@ -1125,7 +1132,9 @@ async function renderCalendar() {
             <div style="width:1px;background:rgba(255,255,255,.06)"></div>
             <div style="flex:1;text-align:center"><div style="font-size:10px;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Net</div><div style="font-size:15px;font-weight:700;color:${stats.net>=0?'var(--income)':'var(--expense)'}">${stats.net>=0?'+':''}${fmtCur(Math.abs(stats.net))}</div></div>
           </div>` : `
-          <div style="text-align:center;color:rgba(255,255,255,.25);font-size:13px;padding:4px 0">Tap a day &middot; Drag to select range</div>`}
+          <div style="text-align:center;color:rgba(255,255,255,.25);font-size:13px;padding:2px 0">
+            Tap a day &middot; Drag to select &middot; <span style="color:rgba(232,213,183,.35)">‹ › to extend across months</span>
+          </div>`}
       </div>
 
       <!-- Transaction list — flows naturally below calendar -->
@@ -1181,22 +1190,47 @@ async function renderCalendar() {
     grid.appendChild(cell);
   }
 
-  // Transactions for selected range
+  // Transactions for selected range — fetch across months
   const txList=$('cal-tx-list');
   if(stats&&stats.count>0){
-    const txsInRange=allTxs.filter(t=>t.date>=rs&&t.date<=re).sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt-a.createdAt);
-    renderTxGroups(groupByDate(txsInRange),txList,false);
+    const txsInRange=await DB.getTransactions({});
+    const filtered=txsInRange.filter(t=>t.date>=rs&&t.date<=re).sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt-a.createdAt);
+    renderTxGroups(groupByDate(filtered),txList,false);
   }
 
-  $('cal-prev').onclick=()=>{ let {year:y,month:m}=State.cal; m--; if(m<0){m=11;y--;} State.cal.year=y;State.cal.month=m;State.cal.rangeStart=null;State.cal.rangeEnd=null; renderCalendar(); };
-  $('cal-next').onclick=()=>{ let {year:y,month:m}=State.cal; m++; if(m>11){m=0;y++;} State.cal.year=y;State.cal.month=m;State.cal.rangeStart=null;State.cal.rangeEnd=null; renderCalendar(); };
+  // Nav — keep range, just change display month
+  $('cal-prev').onclick=()=>{
+    let {year:y,month:m}=State.cal; m--; if(m<0){m=11;y--;}
+    State.cal.year=y; State.cal.month=m;
+    // Don't reset range — user can drag across months
+    renderCalendar();
+  };
+  $('cal-next').onclick=()=>{
+    let {year:y,month:m}=State.cal; m++; if(m>11){m=0;y++;}
+    State.cal.year=y; State.cal.month=m;
+    renderCalendar();
+  };
+  // Clear range button
+  if($('cal-clear-range')) $('cal-clear-range').onclick=()=>{ State.cal.rangeStart=null; State.cal.rangeEnd=null; renderCalendar(); };
   $('cal-fab').onclick=()=>openSheet();
 
+  // Pointer drag — works across month boundaries
+  // On drag start: save anchor date, on move: extend to any date cell visible
   function dateAt(x,y){ return document.elementFromPoint(x,y)?.closest('[data-date]')?.dataset?.date||null; }
-  grid.addEventListener('pointerdown',e=>{ const d=dateAt(e.clientX,e.clientY); if(!d)return; grid.setPointerCapture(e.pointerId); State.cal.rangeStart=d;State.cal.rangeEnd=null;State.cal.dragging=true; renderCalendar(); });
-  grid.addEventListener('pointermove',e=>{ if(!State.cal.dragging)return; const d=dateAt(e.clientX,e.clientY); if(d&&d!==State.cal.rangeEnd){State.cal.rangeEnd=d;renderCalendar();} });
-  grid.addEventListener('pointerup',()=>{State.cal.dragging=false;});
-  grid.addEventListener('pointercancel',()=>{State.cal.dragging=false;});
+
+  grid.addEventListener('pointerdown',e=>{
+    const d=dateAt(e.clientX,e.clientY); if(!d) return;
+    grid.setPointerCapture(e.pointerId);
+    State.cal.rangeStart=d; State.cal.rangeEnd=null; State.cal.dragging=true;
+    renderCalendar();
+  });
+  grid.addEventListener('pointermove',e=>{
+    if(!State.cal.dragging) return;
+    const d=dateAt(e.clientX,e.clientY);
+    if(d&&d!==State.cal.rangeEnd){ State.cal.rangeEnd=d; renderCalendar(); }
+  });
+  grid.addEventListener('pointerup', ()=>{ State.cal.dragging=false; });
+  grid.addEventListener('pointercancel',()=>{ State.cal.dragging=false; });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1464,6 +1498,18 @@ function renderSettings() {
         </div>
         <div style="height:1px;background:rgba(255,255,255,.04);margin:0 16px"></div>
         <div class="settings-row">
+          <div class="settings-icon" style="background:rgba(232,213,183,.08)">📤</div>
+          <button class="settings-label" id="export-json-btn">Export to JSON file</button>
+        </div>
+        <div style="height:1px;background:rgba(255,255,255,.04);margin:0 16px"></div>
+        <div class="settings-row">
+          <div class="settings-icon" style="background:rgba(232,213,183,.08)">📥</div>
+          <label class="settings-label" style="cursor:pointer" id="import-json-label">Import from JSON file
+            <input type="file" id="import-json-input" accept=".json" style="display:none">
+          </label>
+        </div>
+        <div style="height:1px;background:rgba(255,255,255,.04);margin:0 16px"></div>
+        <div class="settings-row">
           <div class="settings-icon" style="background:rgba(255,107,107,.08)">🗑️</div>
           <button class="settings-label danger" id="clear-btn">Clear all transactions</button>
         </div>
@@ -1522,6 +1568,106 @@ function renderSettings() {
       showToast(`Restored ${inserted} new · ${skipped} already existed`);
     } catch(e){ showToast('Restore failed: '+e.message,'error'); }
   });
+
+  // ── Export JSON ───────────────────────────────────────────
+  $('export-json-btn').addEventListener('click', async()=>{
+    try {
+      const [txs, cats, accts] = await Promise.all([
+        DB.getTransactions(),
+        DB.getCategories(),
+        DB.getAccounts(),
+      ]);
+      const payload = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        primaryCurrency: State.primaryCurrency,
+        secondaryCurrency: State.secondaryCurrency,
+        fxRate: State.fxRate,
+        transactions: txs,
+        categories: cats,
+        accounts: accts,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      const date = new Date().toISOString().slice(0,10);
+      a.href     = url;
+      a.download = `finance-backup-${date}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast(`Exported ${txs.length} transactions`);
+    } catch(e){ showToast('Export failed: '+e.message,'error'); }
+  });
+
+  // ── Import JSON ───────────────────────────────────────────
+  $('import-json-input').addEventListener('change', async(e)=>{
+    const file = e.target.files?.[0]; if(!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      // Validate
+      if(!data.transactions || !Array.isArray(data.transactions))
+        throw new Error('Invalid file — no transactions array');
+
+      let inserted=0, skipped=0;
+      const existing = new Set((await DB.getTransactions()).map(t=>t.id));
+
+      // Import transactions
+      const txs = data.transactions.filter(t=>t.id&&!existing.has(t.id));
+      for(const tx of txs){
+        await DB.addTransaction({
+          id:tx.id, type:tx.type||'expense',
+          amount:Number(tx.amount)||0, currency:tx.currency||'THB',
+          categoryId:tx.categoryId||'other', note:tx.note||'',
+          date:tx.date||todayStr(), time:tx.time||'',
+          accountFromId:tx.accountFromId||'wallet', accountToId:tx.accountToId||undefined,
+          syncStatus:'local', createdAt:tx.createdAt||Date.now(), updatedAt:Date.now(),
+        });
+        inserted++;
+      }
+      skipped = data.transactions.length - inserted;
+
+      // Import custom categories (merge, don't overwrite defaults)
+      if(data.categories){
+        const existingCats = new Set((await DB.getCategories()).map(c=>c.id));
+        for(const cat of data.categories){
+          if(!existingCats.has(cat.id)) await DB.saveCategory(cat);
+        }
+      }
+
+      // Import accounts (merge)
+      if(data.accounts){
+        const existingAccts = new Set((await DB.getAccounts()).map(a=>a.id));
+        for(const acct of data.accounts){
+          if(!existingAccts.has(acct.id)) await DB.saveAccount(acct);
+        }
+      }
+
+      // Restore currency settings if present
+      if(data.primaryCurrency){
+        State.primaryCurrency=data.primaryCurrency;
+        await DB.setSetting('primaryCurrency',State.primaryCurrency);
+      }
+      if(data.secondaryCurrency){
+        State.secondaryCurrency=data.secondaryCurrency;
+        await DB.setSetting('secondaryCurrency',State.secondaryCurrency);
+      }
+      if(data.fxRate){
+        State.fxRate=data.fxRate;
+        await DB.setSetting('fxRate',State.fxRate);
+      }
+
+      State.categories = await DB.getCategories();
+      State.accounts   = await DB.getAccountBalances();
+      await loadAndRender();
+      showToast(`Imported ${inserted} new · ${skipped} skipped (duplicates)`);
+    } catch(e){
+      showToast('Import failed: '+e.message,'error');
+    }
+    // Reset input so same file can be re-selected
+    e.target.value='';
+  });
+
   $('clear-btn').addEventListener('click',async()=>{
     if(!confirm('Delete ALL transactions? Cannot be undone.')) return;
     await DB.clearAllData(); showToast('All data cleared'); await loadAndRender();
